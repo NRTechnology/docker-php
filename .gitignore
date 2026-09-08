@@ -1,0 +1,33 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Logs / temporary files
+*.log
+*.tmp
+*.temp
+
+# Build artifacts
+build/
+dist/
+coverage/
+
+# Local Docker overrides
+docker-compose.override.yml
+compose.override.yml
+
+# Runtime data accidentally copied into repository
+backup/
+logs/
+writable/
+node_modules/
+vendor/

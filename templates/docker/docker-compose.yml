@@ -1,0 +1,51 @@
+# ==============================================================================
+# PHP-FPM application Docker Compose template
+# Placeholders use {{NAME}} syntax.
+# The generator supplies framework-specific writable mounts.
+# ==============================================================================
+
+services:
+  php:
+    image: local/php:{{PHP_VERSION}}
+    container_name: {{APP_NAME}}-php
+    restart: unless-stopped
+
+    working_dir: /var/www/html
+
+    read_only: true
+
+    security_opt:
+      - no-new-privileges:true
+
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+
+    volumes:
+      - /var/apps/{{APP_NAME}}/htdocs:/var/www/html:ro
+      {{WRITABLE_MOUNTS}}
+      - /run/php:/run/php:rw
+      - /run/mysqld:/run/mysqld:ro
+      - /var/apps/{{APP_NAME}}/logs:/var/log/app:rw
+      - /opt/docker-apps/{{APP_NAME}}/zz-custom.conf:/usr/local/etc/php-fpm.d/zz-custom.conf:ro
+
+    environment:
+      TZ: Asia/Jakarta
+
+    cpus: "2.0"
+    mem_limit: 1g
+    pids_limit: 100
+
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+    stop_grace_period: 30s
+
+    networks:
+      - {{APP_NAME}}-network
+
+networks:
+  {{APP_NAME}}-network:
+    name: {{APP_NAME}}-network
+    driver: bridge
