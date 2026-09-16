@@ -552,7 +552,7 @@ fi
 
 echo
 
-show_images
+show_images 
 
 echo
 
