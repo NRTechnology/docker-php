@@ -306,7 +306,7 @@ show_images() {
     section "LOCAL PHP IMAGES"
 
     docker images local/php \
-        --format 'table {{.Repository}}\t{{.Tag}}\t{{.ImageID}}\t{{.CreatedSince}}\t{{.Size}}'
+        --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}'
 
 }
 
