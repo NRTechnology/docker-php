@@ -1,20 +1,22 @@
 # Docker PHP
 
-Production-ready Docker PHP-FPM runtime for PHP 7.4, 8.3, 8.4, and 8.5 applications.
+Production-ready PHP-FPM Docker deployment standard for multi-application production servers.
 
-Repository ini menyediakan standar deployment PHP-FPM berbasis Docker untuk aplikasi web production dengan **Nginx sebagai web server pada host** dan **MariaDB sebagai database pada host**.
+Repository ini menyediakan standar deployment PHP-FPM berbasis Docker dengan:
 
-Fokus utama project ini adalah:
+- Nginx sebagai web server pada host
+- MariaDB sebagai database standar pada host
+- MySQL tetap didukung
+- PHP-FPM berjalan di dalam container
+- Isolasi container per aplikasi
+- Read-only application source
+- Writable directory terpisah
+- PHP-FPM menggunakan Unix socket
+- Docker container hardening
+- Dukungan Laravel, CodeIgniter 4, dan Generic PHP
+- Dukungan multiple PHP versions dalam satu server
 
-* Standardisasi deployment PHP-FPM
-* Dukungan beberapa versi PHP dalam satu server
-* Isolasi container per aplikasi
-* Read-only application source
-* Pemisahan directory writable
-* PHP-FPM menggunakan Unix socket
-* Integrasi dengan Nginx
-* Docker container hardening
-* Deployment aplikasi Laravel, CodeIgniter 4, dan PHP generic
+**Current Release: `1.1.0`**
 
 ---
 
@@ -22,176 +24,79 @@ Fokus utama project ini adalah:
 
 ```text
                          PRODUCTION SERVER
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│                           NGINX                             │
-│                             │                               │
-│                             │ Unix Socket                   │
-│                             ▼                               │
-│                      /run/php/*.sock                        │
-│                             │                               │
-│              ┌──────────────┼──────────────┐                │
-│              │              │              │                │
-│              ▼              ▼              ▼                │
-│          PHP-FPM        PHP-FPM        PHP-FPM              │
-│          Container      Container      Container            │
-│                                                             │
-│          PHP 7.4        PHP 8.3        PHP 8.5              │
-│                                                             │
-│              │              │              │                │
-│              └──────────────┼──────────────┘                │
-│                             │                               │
-│                             │ TCP                           │
-│                             ▼                               │
-│                          MariaDB                            │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────┐
+│                                                               │
+│                           NGINX                               │
+│                         Host Server                           │
+│                              │                                │
+│                              │ Unix Socket                    │
+│                              ▼                                │
+│                     /run/php/*.sock                           │
+│                              │                                │
+│             ┌────────────────┼────────────────┐               │
+│             │                │                │               │
+│             ▼                ▼                ▼               │
+│        PHP-FPM            PHP-FPM          PHP-FPM             │
+│        Container          Container        Container           │
+│                                                               │
+│        PHP 8.2            PHP 8.4          PHP 8.5             │
+│                                                               │
+│             │                │                │               │
+│             └────────────────┼────────────────┘               │
+│                              │                                │
+│                              │ TCP :3306                      │
+│                              ▼                                │
+│                       MariaDB / MySQL                         │
+│                         Host Server                           │
+│                                                               │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-Setiap aplikasi berjalan pada container PHP-FPM tersendiri.
+Setiap aplikasi memiliki:
+
+- PHP-FPM container sendiri
+- Docker bridge network sendiri
+- PHP-FPM Unix socket sendiri
+- Docker Compose configuration sendiri
+- Nginx virtual host sendiri
+- Writable directory sendiri
+- Application log directory sendiri
+- Backup directory sendiri
+- Database dan database user sendiri
+
+Dengan arsitektur ini, satu server dapat menjalankan beberapa aplikasi dengan versi PHP yang berbeda.
 
 Contoh:
 
 ```text
-Application A → PHP 7.4
-Application B → PHP 8.3
-Application C → PHP 8.4
-Application D → PHP 8.5
+myapp   → PHP 8.3
+myapp2  → PHP 8.4
+myapp3  → PHP 8.5
+legacy  → PHP 7.4
 ```
-
-Dengan pendekatan ini, satu server dapat menjalankan aplikasi dengan kebutuhan versi PHP yang berbeda.
 
 ---
 
 # Supported PHP Versions
 
-| PHP Version | Docker Image    | Use Case           |
-| ----------- | --------------- | ------------------ |
-| PHP 7.4     | `local/php:7.4` | Legacy application |
-| PHP 8.3     | `local/php:8.3` | Production         |
-| PHP 8.4     | `local/php:8.4` | Production         |
-| PHP 8.5     | `local/php:8.5` | Production         |
+| PHP Version | Docker Image | Recommended Use |
+|---|---|---|
+| PHP 7.4 | `local/php:7.4` | Legacy application |
+| PHP 8.2 | `local/php:8.2` | Application compatible with PHP 8.2 |
+| PHP 8.3 | `local/php:8.3` | Production |
+| PHP 8.4 | `local/php:8.4` | Production |
+| PHP 8.5 | `local/php:8.5` | Production |
 
-> **Note:** PHP 7.4 sudah End-of-Life dan sebaiknya hanya digunakan untuk aplikasi legacy yang belum dapat dimigrasikan.
+> **Note:** PHP 7.4 sudah End-of-Life dan hanya dipertahankan untuk kompatibilitas aplikasi legacy. Jangan gunakan PHP 7.4 untuk aplikasi baru.
 
----
-
-# Directory Structure
-
-Repository ini menggunakan struktur standar:
-
-```text
-/opt/
-├── docker-php/
-│   ├── README.md
-│   ├── create-php-app.sh
-│   │
-│   ├── images/
-│   │   ├── 7.4/
-│   │   │   ├── Dockerfile
-│   │   │   └── php.ini
-│   │   │
-│   │   ├── 8.3/
-│   │   │   ├── Dockerfile
-│   │   │   └── php.ini
-│   │   │
-│   │   ├── 8.4/
-│   │   │   ├── Dockerfile
-│   │   │   └── php.ini
-│   │   │
-│   │   └── 8.5/
-│   │       ├── Dockerfile
-│   │       └── php.ini
-│   │
-│   └── templates/
-│       ├── docker/
-│       └── nginx/
-│
-└── docker-apps/
-    ├── myapp/
-    ├── myapp2/
-    └── myapp3/
-
-
-/var/
-└── apps/
-    ├── myapp/
-    ├── myapp2/
-    └── myapp3/
-```
-
-### `/opt/docker-php`
-
-Repository utama yang berisi:
-
-* Dockerfile PHP
-* PHP configuration
-* Application generator
-* Docker template
-* Nginx template
-* Dokumentasi
-
-### `/opt/docker-apps`
-
-Berisi konfigurasi Docker untuk setiap aplikasi.
-
-Contoh:
-
-```text
-/opt/docker-apps/myapp/
-├── docker-compose.yml
-├── zz-custom.conf
-└── nginx/
-    └── myapp.conf
-```
-
-### `/var/apps`
-
-Berisi source code dan data aplikasi.
-
-Contoh:
-
-```text
-/var/apps/myapp/
-├── htdocs/
-├── data/
-│   └── writable/
-├── logs/
-└── backup/
-```
-
----
-
-# Application Architecture
-
-Setiap aplikasi mempunyai struktur terisolasi:
-
-```text
-/opt/docker-apps/myapp/
-└── docker-compose.yml
-
-/var/apps/myapp/
-├── htdocs/
-├── data/
-│   └── writable/
-├── logs/
-└── backup/
-```
-
-Pembagian fungsi:
-
-| Directory        | Fungsi                | Access     |
-| ---------------- | --------------------- | ---------- |
-| `htdocs/`        | Source code aplikasi  | Read Only  |
-| `data/writable/` | Data runtime aplikasi | Read/Write |
-| `logs/`          | Log aplikasi          | Read/Write |
-| `backup/`        | Backup aplikasi       | Read/Write |
+Versi PHP yang digunakan aplikasi harus sesuai dengan requirement aplikasi dan dependency lock file.
 
 ---
 
 # Supported Frameworks
 
-Generator mendukung tiga tipe aplikasi:
+Application generator mendukung:
 
 ```text
 laravel
@@ -201,74 +106,668 @@ generic
 
 ## Laravel
 
-```bash
-./create-php-app.sh myapp 8.3 laravel
+Document root:
+
+```text
+/var/apps/<application-name>/htdocs/public
 ```
 
 Writable directory:
 
 ```text
-/var/apps/myapp/data/writable/
+/var/apps/<application-name>/data/writable/
 ├── storage/
-│   ├── app/
-│   ├── framework/
-│   │   ├── cache/
-│   │   ├── sessions/
-│   │   └── views/
-│   └── logs/
-│
 └── bootstrap-cache/
 ```
 
+Mapping ke container:
+
+```text
+storage
+    ↓
+/var/www/html/storage
+
+bootstrap-cache
+    ↓
+/var/www/html/bootstrap/cache
+```
+
+## CodeIgniter 4
+
+Document root:
+
+```text
+/var/apps/<application-name>/htdocs/public
+```
+
+Writable directory:
+
+```text
+/var/apps/<application-name>/data/writable/
+├── cache/
+├── logs/
+├── session/
+└── uploads/
+```
+
+Mapping ke container:
+
+```text
+/var/apps/<application-name>/data/writable
+        ↓
+/var/www/html/writable
+```
+
+## Generic PHP
+
+Untuk aplikasi PHP custom atau legacy:
+
+Document root:
+
+```text
+/var/apps/<application-name>/htdocs
+```
+
+Writable directory:
+
+```text
+/var/apps/<application-name>/data/writable/
+├── cache/
+├── logs/
+├── session/
+└── uploads/
+```
+
+Mapping ke container:
+
+```text
+/var/apps/<application-name>/data/writable
+        ↓
+/var/www/html/data
+```
+
 ---
+
+# Repository Structure
+
+```text
+/opt/docker-php/
+
+├── README.md
+├── CHANGELOG.md
+├── create-php-app.sh
+├── .gitignore
+│
+├── images/
+│   ├── 7.4/
+│   │   ├── Dockerfile
+│   │   └── php.ini
+│   ├── 8.2/
+│   │   ├── Dockerfile
+│   │   └── php.ini
+│   ├── 8.3/
+│   │   ├── Dockerfile
+│   │   └── php.ini
+│   ├── 8.4/
+│   │   ├── Dockerfile
+│   │   └── php.ini
+│   └── 8.5/
+│       ├── Dockerfile
+│       └── php.ini
+│
+├── templates/
+│   ├── docker/
+│   │   └── docker-compose.yml
+│   ├── nginx/
+│   │   └── app.conf
+│   └── php-fpm/
+│       └── zz-custom.conf
+│
+└── scripts/
+    ├── build-image.sh
+    ├── check-requirements.sh
+    └── test-images.sh
+```
+
+---
+
+# Production Directory Layout
+
+```text
+/opt/
+├── docker-php/
+└── docker-apps/
+
+/var/
+└── apps/
+```
+
+## `/opt/docker-php`
+
+Repository utama yang berisi:
+
+- Dockerfile PHP
+- PHP configuration
+- PHP-FPM configuration
+- Application generator
+- Docker Compose template
+- Nginx template
+- Requirement checker
+- Image build script
+- Image test script
+- Documentation
+
+## `/opt/docker-apps`
+
+Berisi konfigurasi deployment Docker untuk masing-masing aplikasi.
+
+Contoh:
+
+```text
+/opt/docker-apps/myapp/
+├── docker-compose.yml
+├── zz-custom.conf
+└── db-credentials.env
+```
+
+Database credentials dibuat otomatis oleh `create-php-app.sh`.
+
+## `/var/apps`
+
+Berisi source code dan runtime data aplikasi.
+
+```text
+/var/apps/myapp/
+├── htdocs/
+├── data/
+│   └── writable/
+├── logs/
+└── backup/
+```
+
+| Directory | Fungsi | Access |
+|---|---|---|
+| `htdocs/` | Application source | Read Only |
+| `data/writable/` | Runtime data | Read/Write |
+| `logs/` | Application logs | Read/Write |
+| `backup/` | Application backup | Read/Write |
+
+---
+
+# Installation
+
+## 1. Prepare Server
+
+Repository dirancang untuk server Linux production dengan:
+
+- Nginx
+- Docker Engine
+- Docker Compose Plugin
+- MariaDB
+
+MariaDB merupakan database standar project.
+
+MySQL tetap dapat digunakan apabila server telah menggunakan MySQL.
+
+## 2. Clone Repository
+
+```bash
+mkdir -p /opt
+cd /opt
+git clone https://github.com/NRTechnology/docker-php.git docker-php
+cd /opt/docker-php
+```
+
+## 3. Make Scripts Executable
+
+```bash
+chmod +x create-php-app.sh
+chmod +x scripts/*.sh
+```
+
+Verify:
+
+```bash
+ls -lah create-php-app.sh scripts/
+```
+
+---
+
+# Install Requirements
+
+Requirement installation dilakukan menggunakan:
+
+```text
+scripts/check-requirements.sh
+```
+
+Script digunakan untuk memeriksa dan memasang komponen dasar:
+
+- Nginx
+- Docker Engine
+- Docker Compose Plugin
+- MariaDB Server
+- MariaDB Client
+
+Jalankan:
+
+```bash
+cd /opt/docker-php
+./scripts/check-requirements.sh
+```
+
+Verifikasi:
+
+```bash
+nginx -v
+docker --version
+docker compose version
+mariadb --version
+```
+
+Verifikasi service:
+
+```bash
+systemctl status nginx
+systemctl status docker
+systemctl status mariadb
+```
+
+> **Important:** Script requirement tidak secara otomatis mengganti konfigurasi production yang sudah ada.
+
+Script juga tidak secara otomatis mengubah:
+
+- Firewall
+- Database network binding
+- Docker daemon configuration
+- DNS
+- TLS/SSL
+- Reverse proxy
+- Production-specific network policy
+
+### MariaDB Security
+
+`mariadb-secure-installation` tidak dijalankan otomatis karena merupakan proses interaktif.
+
+Setelah instalasi MariaDB, administrator disarankan melakukan hardening secara manual.
+
+---
+
+# Database Standard
+
+Database standar project adalah:
+
+```text
+MariaDB
+```
+
+Arsitektur:
+
+```text
+PHP-FPM Container
+       │
+       │ TCP :3306
+       ▼
+    MariaDB
+    Host OS
+```
+
+MySQL tetap didukung:
+
+```text
+PHP-FPM Container
+       │
+       │ TCP :3306
+       ▼
+     MySQL
+    Host OS
+```
+
+Application generator mendeteksi database client yang tersedia.
+
+Prioritas:
+
+```text
+mariadb
+   ↓
+mysql
+```
+
+Jika `mariadb` tersedia, client tersebut digunakan.
+
+Jika tidak tersedia tetapi `mysql` tersedia, client MySQL digunakan.
+
+---
+
+# Build PHP Images
+
+Image PHP harus tersedia sebelum membuat application environment.
+
+Build script:
+
+```text
+scripts/build-image.sh
+```
+
+## Interactive Mode
+
+```bash
+cd /opt/docker-php
+./scripts/build-image.sh
+```
+
+Menu menyediakan pilihan:
+
+```text
+1. PHP 7.4
+2. PHP 8.2
+3. PHP 8.3
+4. PHP 8.4
+5. PHP 8.5
+6. Build All
+7. Show Images
+0. Exit
+```
+
+## Build Specific Version
+
+```bash
+./scripts/build-image.sh 8.2
+./scripts/build-image.sh 8.3
+./scripts/build-image.sh 8.4
+./scripts/build-image.sh 8.5
+./scripts/build-image.sh 7.4
+```
+
+## Build All Images
+
+```bash
+./scripts/build-image.sh all
+```
+
+Image yang dihasilkan:
+
+```text
+local/php:7.4
+local/php:8.2
+local/php:8.3
+local/php:8.4
+local/php:8.5
+```
+
+---
+
+# Verify PHP Images
+
+Image dapat diverifikasi menggunakan:
+
+```bash
+./scripts/test-images.sh
+```
+
+Pemeriksaan meliputi:
+
+- PHP version
+- PHP modules
+- PHP configuration
+- PHP-FPM configuration
+
+Manual verification:
+
+```bash
+docker run --rm local/php:8.4 php -v
+docker run --rm local/php:8.4 php -m
+docker run --rm local/php:8.4 php-fpm -t
+```
+
+---
+
+# Create Application
+
+Application generator:
+
+```text
+create-php-app.sh
+```
+
+Syntax:
+
+```bash
+./create-php-app.sh <application-name> <php-version> <framework> <domain-name>
+```
+
+Supported framework:
+
+```text
+laravel
+ci
+generic
+```
+
+Supported PHP versions:
+
+```text
+7.4
+8.2
+8.3
+8.4
+8.5
+```
+
+## Laravel
+
+```bash
+./create-php-app.sh myapp 8.3 laravel myapp.example.go.id
+```
 
 ## CodeIgniter 4
 
 ```bash
-./create-php-app.sh myapp 8.4 ci
+./create-php-app.sh myapp2 8.4 ci myapp2.example.go.id
 ```
 
-Writable directory:
+## Generic PHP
 
-```text
-/var/apps/myapp/data/writable/
-├── cache/
-├── logs/
-├── session/
-└── uploads/
+```bash
+./create-php-app.sh myapp3 8.5 generic myapp3.example.go.id
 ```
 
-Directory tersebut akan digunakan sebagai:
+## Legacy Application
 
-```text
-/var/www/html/writable
+```bash
+./create-php-app.sh legacy-app 7.4 generic legacy.example.go.id
 ```
 
 ---
 
-## Generic PHP
+# What `create-php-app.sh` Does
 
-Untuk aplikasi PHP biasa:
+Generator melakukan beberapa proses secara otomatis.
 
-```bash
-./create-php-app.sh myapp 8.5 generic
-```
+## 1. Validate Input
 
-Writable directory:
+Memvalidasi:
+
+- Application name
+- Domain name
+- PHP version
+- Framework
+- Docker
+- Docker Compose
+- Nginx
+- PHP image
+
+## 2. Create Application Directories
 
 ```text
-/var/apps/myapp/data/writable/
-├── cache/
+/var/apps/myapp/
+├── htdocs/
+├── data/
+│   └── writable/
 ├── logs/
-├── session/
-└── uploads/
+└── backup/
+```
+
+## 3. Create Docker Network
+
+Setiap aplikasi mendapatkan network sendiri:
+
+```text
+myapp-network
+```
+
+Network menggunakan:
+
+```yaml
+driver: bridge
+```
+
+Subnet Docker dideteksi secara dinamis setelah network dibuat.
+
+## 4. Create Database
+
+Generator secara otomatis membuat database:
+
+```text
+myapp
+```
+
+Database menggunakan:
+
+```text
+utf8mb4
+utf8mb4_unicode_ci
+```
+
+## 5. Create Database User
+
+Generator membuat user:
+
+```text
+myapp
+```
+
+User hanya diberikan privilege terhadap database aplikasi:
+
+```text
+myapp.*
+```
+
+## 6. Generate Database Password
+
+Password database dibuat otomatis menggunakan random generator:
+
+```text
+openssl rand -hex
+```
+
+atau fallback:
+
+```text
+/dev/urandom
+```
+
+Password tidak menggunakan password default.
+
+## 7. Restrict Database User Host
+
+Host database user ditentukan berdasarkan subnet Docker aktual.
+
+Contoh:
+
+```text
+Docker subnet:
+172.24.0.0/16
+```
+
+Database user dapat dibatasi menjadi:
+
+```text
+'myapp'@'172.24.%'
+```
+
+Tujuannya menghindari penggunaan:
+
+```text
+'myapp'@'%'
+```
+
+yang terlalu luas.
+
+---
+
+# Database Credentials
+
+Credentials disimpan di:
+
+```text
+/opt/docker-apps/myapp/db-credentials.env
+```
+
+Contoh:
+
+```env
+DB_CONNECTION=mysql
+DB_HOST=172.24.0.1
+DB_PORT=3306
+DB_DATABASE=myapp
+DB_USERNAME=myapp
+DB_PASSWORD=<generated-password>
+```
+
+Permission:
+
+```text
+0600
+```
+
+Owner:
+
+```text
+root:root
+```
+
+Periksa:
+
+```bash
+cat /opt/docker-apps/myapp/db-credentials.env
+```
+
+> Jangan memasukkan file `db-credentials.env` ke Git repository.
+
+`DB_CONNECTION=mysql` digunakan karena nama driver database Laravel adalah `mysql`,
+baik ketika backend database menggunakan MySQL maupun MariaDB.
+
+---
+
+# Generated Docker Configuration
+
+Generator membuat:
+
+```text
+/opt/docker-apps/myapp/
+├── docker-compose.yml
+├── zz-custom.conf
+└── db-credentials.env
+```
+
+Docker Compose menggunakan:
+
+```yaml
+image: local/php:<version>
+```
+
+Contoh:
+
+```yaml
+image: local/php:8.4
 ```
 
 ---
 
 # Docker Security
 
-Container dirancang dengan beberapa lapisan hardening.
+Container menggunakan beberapa lapisan hardening.
 
 ## Read-Only Root Filesystem
 
@@ -276,35 +775,37 @@ Container dirancang dengan beberapa lapisan hardening.
 read_only: true
 ```
 
-Filesystem utama container dibuat read-only.
-
----
-
 ## Read-Only Application Source
-
-Source code:
 
 ```yaml
 volumes:
   - /var/apps/myapp/htdocs:/var/www/html:ro
 ```
 
-Dengan demikian proses PHP tidak dapat menulis langsung ke source code.
+Source code tidak dapat ditulis langsung oleh PHP-FPM.
 
----
+## Writable Runtime Directory
 
-## Writable Directory Terpisah
+Directory yang membutuhkan write dipisahkan.
 
-Directory yang memang membutuhkan write dipisahkan dari source code.
+Laravel:
 
-Contoh Laravel:
-
-```yaml
-volumes:
-  - /var/apps/myapp/data/writable/storage:/var/www/html/storage:rw
+```text
+storage
+bootstrap/cache
 ```
 
----
+CodeIgniter:
+
+```text
+writable
+```
+
+Generic:
+
+```text
+data
+```
 
 ## No New Privileges
 
@@ -313,10 +814,6 @@ security_opt:
   - no-new-privileges:true
 ```
 
-Mencegah proses dalam container memperoleh privilege tambahan.
-
----
-
 ## Temporary Filesystem
 
 ```yaml
@@ -324,53 +821,39 @@ tmpfs:
   - /tmp:rw,noexec,nosuid,size=128m
 ```
 
-Directory `/tmp` menggunakan filesystem sementara dengan:
+## Resource Limits
 
-* `noexec`
-* `nosuid`
-* size limit
-
----
-
-## PID Limit
+Default:
 
 ```yaml
+cpus: "2.0"
+mem_limit: 1g
 pids_limit: 100
 ```
 
-Membatasi jumlah process/thread yang dapat dibuat container.
-
----
-
-## Resource Limits
-
-Default resource limit:
+File descriptor limit:
 
 ```yaml
-deploy:
-  resources:
-    limits:
-      cpus: "2.0"
-      memory: 1G
-    reservations:
-      cpus: "0.25"
-      memory: 128M
+ulimits:
+  nofile:
+    soft: 65535
+    hard: 65535
 ```
 
-Nilai dapat disesuaikan dengan kebutuhan aplikasi.
+Nilai dapat disesuaikan sesuai kebutuhan aplikasi.
 
 ---
 
 # Container Capabilities
 
-Repository ini **tidak menggunakan**:
+Project ini **tidak menggunakan**:
 
 ```yaml
 cap_drop:
   - ALL
 ```
 
-Hardening dilakukan menggunakan mekanisme yang lebih praktis dan kompatibel seperti:
+Hardening dilakukan menggunakan:
 
 ```text
 read_only
@@ -382,11 +865,13 @@ read-only source code
 isolated writable directories
 ```
 
+Keputusan ini dibuat berdasarkan pertimbangan kompatibilitas runtime aplikasi di lingkungan production.
+
 ---
 
 # PHP-FPM
 
-PHP-FPM berjalan menggunakan Unix socket.
+PHP-FPM menggunakan Unix socket.
 
 Contoh:
 
@@ -394,13 +879,13 @@ Contoh:
 /run/php/myapp.sock
 ```
 
-Nginx akan meneruskan request PHP melalui socket tersebut:
+Nginx:
 
 ```nginx
 fastcgi_pass unix:/run/php/myapp.sock;
 ```
 
-Tidak diperlukan port TCP khusus untuk masing-masing PHP-FPM container.
+Tidak diperlukan port TCP PHP-FPM berbeda untuk setiap aplikasi.
 
 Contoh:
 
@@ -413,10 +898,10 @@ Contoh:
 
 Keuntungan:
 
-* Tidak membuka PHP-FPM ke jaringan.
-* Mengurangi attack surface.
-* Tidak membutuhkan port `9001`, `9002`, `9003`, dan seterusnya.
-* Konfigurasi multi-PHP lebih sederhana.
+- Tidak membuka PHP-FPM ke jaringan
+- Mengurangi attack surface
+- Tidak membutuhkan port 9001, 9002, 9003, dan seterusnya
+- Memudahkan multi-PHP deployment
 
 ---
 
@@ -424,13 +909,13 @@ Keuntungan:
 
 Nginx berjalan langsung pada host.
 
-Virtual host masing-masing aplikasi dibuat di:
+Virtual host:
 
 ```text
 /etc/nginx/sites-available/
 ```
 
-dan di-enable melalui:
+Enabled site:
 
 ```text
 /etc/nginx/sites-enabled/
@@ -443,258 +928,41 @@ Contoh:
 /etc/nginx/sites-enabled/myapp.conf
 ```
 
-Document root untuk Laravel dan CodeIgniter 4:
-
-```text
-/var/apps/myapp/htdocs/public
-```
-
-Untuk aplikasi PHP generic:
-
-```text
-/var/apps/myapp/htdocs
-```
+Generator otomatis membuat dan mengaktifkan virtual host.
 
 ---
 
-# MariaDB
+# Nginx Security
 
-MariaDB tetap berjalan pada host.
+Generated Nginx configuration menyediakan:
 
-Arsitektur:
+- Security headers
+- Hidden-file protection
+- Sensitive file protection
+- PHP-FPM Unix socket
+- `try_files`
+- PHP execution restriction pada writable directories
+
+File sensitif yang diblokir meliputi:
 
 ```text
-PHP-FPM Container
-        │
-        │ TCP
-        ▼
-     MariaDB
+.env
+.ini
+.log
+.sql
+.bak
+.backup
+.old
+.orig
+.save
+.swp
 ```
 
-Aplikasi menggunakan konfigurasi database melalui environment variable.
-
-Contoh:
-
-```env
-DB_HOST=172.17.0.1
-DB_PORT=3306
-DB_DATABASE=myapp
-DB_USERNAME=myapp
-DB_PASSWORD=********
-```
-
-`DB_HOST` harus disesuaikan dengan konfigurasi jaringan Docker pada server.
+PHP execution juga diblokir pada writable directory aplikasi.
 
 ---
 
-# Installation
-
-Buat directory `/opt` jika belum tersedia:
-
-```bash
-mkdir -p /opt
-```
-
-Clone repository:
-
-```bash
-cd /opt
-
-git clone https://github.com/USERNAME/docker-php.git docker-php
-```
-
-Repository akan tersedia di:
-
-```text
-/opt/docker-php
-```
-
-Masuk ke repository:
-
-```bash
-cd /opt/docker-php
-```
-
-Berikan permission executable:
-
-```bash
-chmod +x create-php-app.sh
-```
-
----
-
-# Build PHP Images
-
-Build seluruh PHP image:
-
-```bash
-cd /opt/docker-php/images
-
-for version in 7.4 8.3 8.4 8.5; do
-    docker build \
-        -t local/php:${version} \
-        ${version}
-done
-```
-
-Atau build satu versi:
-
-```bash
-docker build \
-    -t local/php:8.3 \
-    8.3
-```
-
-Verifikasi:
-
-```bash
-docker images | grep 'local/php'
-```
-
-Expected:
-
-```text
-local/php    7.4
-local/php    8.3
-local/php    8.4
-local/php    8.5
-```
-
----
-
-# Create Application
-
-Syntax:
-
-```bash
-./create-php-app.sh <application-name> <php-version> <framework>
-```
-
-Framework yang tersedia:
-
-```text
-laravel
-ci
-generic
-```
-
-Contoh Laravel:
-
-```bash
-./create-php-app.sh myapp 8.3 laravel
-```
-
-CodeIgniter 4:
-
-```bash
-./create-php-app.sh myapp2 8.4 ci
-```
-
-PHP generic:
-
-```bash
-./create-php-app.sh myapp3 8.5 generic
-```
-
-Legacy application:
-
-```bash
-./create-php-app.sh legacy-app 7.4 generic
-```
-
----
-
-# Generated Configuration
-
-Setelah:
-
-```bash
-./create-php-app.sh myapp 8.3 laravel
-```
-
-generator akan membuat:
-
-```text
-/opt/docker-apps/myapp/
-├── docker-compose.yml
-├── zz-custom.conf
-└── nginx/
-    └── myapp.conf
-```
-
-dan:
-
-```text
-/var/apps/myapp/
-├── htdocs/
-├── data/
-│   └── writable/
-├── logs/
-└── backup/
-```
-
-Virtual host Nginx juga akan dibuat:
-
-```text
-/etc/nginx/sites-available/myapp.conf
-/etc/nginx/sites-enabled/myapp.conf
-```
-
----
-
-# Start Application
-
-Masuk ke konfigurasi Docker:
-
-```bash
-cd /opt/docker-apps/myapp
-```
-
-Start container:
-
-```bash
-docker compose up -d
-```
-
-Check:
-
-```bash
-docker compose ps
-```
-
-Logs:
-
-```bash
-docker compose logs -f
-```
-
----
-
-# Verify PHP
-
-Check PHP version:
-
-```bash
-docker exec myapp-php php -v
-```
-
-Check PHP modules:
-
-```bash
-docker exec myapp-php php -m
-```
-
-Check PHP-FPM configuration:
-
-```bash
-docker exec myapp-php php-fpm -tt
-```
-
----
-
-# Nginx Validation
-
-Sebelum reload:
+# Validate Nginx
 
 ```bash
 nginx -t
@@ -705,6 +973,380 @@ Jika valid:
 ```bash
 systemctl reload nginx
 ```
+
+Generator juga menjalankan validasi Nginx selama proses pembuatan application.
+
+---
+
+# Validate Docker Compose
+
+```bash
+cd /opt/docker-apps/myapp
+docker compose config
+```
+
+Generator juga menjalankan validasi `docker compose config` sebelum deployment selesai.
+
+---
+
+# Start Application
+
+```bash
+cd /opt/docker-apps/myapp
+cat docker-compose.yml
+docker compose up -d
+docker compose ps
+```
+
+Expected:
+
+```text
+myapp-php    ...    Up
+```
+
+---
+
+# PHP-FPM Logs
+
+```bash
+docker compose logs --tail=50 php
+docker compose logs -f php
+```
+
+Expected:
+
+```text
+fpm is running
+ready to handle connections
+```
+
+---
+
+# PHP Verification
+
+```bash
+docker compose exec php php -v
+docker compose exec php php -m
+docker compose exec php php-fpm -t
+```
+
+---
+
+# Laravel Deployment
+
+Source:
+
+```text
+/var/apps/myapp/htdocs
+```
+
+Pastikan:
+
+```text
+/var/apps/myapp/htdocs/artisan
+/var/apps/myapp/htdocs/composer.json
+/var/apps/myapp/htdocs/public
+```
+
+Document root:
+
+```text
+/var/apps/myapp/htdocs/public
+```
+
+Install dependency dilakukan secara terpisah.
+
+Composer tidak termasuk dalam PHP-FPM runtime image.
+
+Setelah dependency tersedia:
+
+```bash
+docker compose exec php php artisan --version
+```
+
+Generate application key:
+
+```bash
+docker compose exec php php artisan key:generate
+```
+
+> Perintah Artisan hanya dapat dijalankan setelah dependency Composer tersedia.
+
+---
+
+# CodeIgniter 4 Deployment
+
+Source:
+
+```text
+/var/apps/myapp/htdocs
+```
+
+Document root:
+
+```text
+/var/apps/myapp/htdocs/public
+```
+
+Writable:
+
+```text
+/var/apps/myapp/data/writable
+```
+
+Mapping:
+
+```text
+/var/apps/myapp/data/writable
+        ↓
+/var/www/html/writable
+```
+
+---
+
+# Generic PHP Deployment
+
+Source:
+
+```text
+/var/apps/myapp/htdocs
+```
+
+Document root:
+
+```text
+/var/apps/myapp/htdocs
+```
+
+Writable:
+
+```text
+/var/apps/myapp/data/writable
+```
+
+Mapping:
+
+```text
+/var/apps/myapp/data/writable
+        ↓
+/var/www/html/data
+```
+
+---
+
+# Application Isolation
+
+Setiap aplikasi mendapatkan environment terisolasi:
+
+```text
+Application
+│
+├── PHP-FPM Container
+├── Docker Network
+├── PHP-FPM Socket
+├── Docker Compose
+├── Nginx Virtual Host
+├── Writable Directory
+├── Application Logs
+├── Backup Directory
+└── Database
+```
+
+Contoh:
+
+```text
+myapp
+├── myapp-php
+├── myapp-network
+├── /run/php/myapp.sock
+└── /var/apps/myapp/
+
+myapp2
+├── myapp2-php
+├── myapp2-network
+├── /run/php/myapp2.sock
+└── /var/apps/myapp2/
+```
+
+---
+
+# Upgrade PHP
+
+Setiap aplikasi dapat menggunakan versi PHP yang berbeda.
+
+Contoh:
+
+```text
+myapp   → PHP 8.3
+myapp2  → PHP 8.4
+myapp3  → PHP 8.5
+```
+
+Versi PHP ditentukan pada:
+
+```text
+/opt/docker-apps/myapp/docker-compose.yml
+```
+
+Contoh:
+
+```yaml
+image: local/php:8.4
+```
+
+Setelah perubahan:
+
+```bash
+cd /opt/docker-apps/myapp
+docker compose up -d --force-recreate
+```
+
+Sebelum upgrade production, pastikan dependency aplikasi kompatibel dengan versi PHP target.
+
+---
+
+# Production Deployment Workflow
+
+```text
+             SERVER PREPARATION
+                     │
+                     ▼
+        check-requirements.sh
+                     │
+                     ▼
+             Build PHP Images
+                     │
+                     ▼
+            test-images.sh
+                     │
+                     ▼
+           create-php-app.sh
+                     │
+          ┌──────────┼──────────┐
+          │          │          │
+          ▼          ▼          ▼
+       Network     Database   Nginx
+          │          │          │
+          └──────────┼──────────┘
+                     │
+                     ▼
+             Deploy Source Code
+                     │
+                     ▼
+            Install Dependencies
+                     │
+                     ▼
+             Start PHP-FPM
+                     │
+                     ▼
+             Validate Nginx
+                     │
+                     ▼
+              Application Test
+```
+
+---
+
+# Production Deployment Example
+
+## Step 1 — Install Requirements
+
+```bash
+cd /opt/docker-php
+./scripts/check-requirements.sh
+```
+
+## Step 2 — Build PHP Image
+
+```bash
+./scripts/build-image.sh 8.4
+```
+
+## Step 3 — Test Image
+
+```bash
+./scripts/test-images.sh
+```
+
+## Step 4 — Create Application
+
+```bash
+./create-php-app.sh myapp 8.4 laravel myapp.example.go.id
+```
+
+## Step 5 — Review Configuration
+
+```bash
+cd /opt/docker-apps/myapp
+cat docker-compose.yml
+cat db-credentials.env
+```
+
+## Step 6 — Deploy Application Source
+
+Copy or clone source code to:
+
+```text
+/var/apps/myapp/htdocs
+```
+
+## Step 7 — Install Application Dependencies
+
+Dependency installation dilakukan terpisah dari runtime image.
+
+## Step 8 — Start PHP-FPM
+
+```bash
+docker compose up -d
+```
+
+## Step 9 — Verify
+
+```bash
+docker compose ps
+docker compose logs --tail=50 php
+ls -lah /run/php/myapp.sock
+```
+
+## Step 10 — Validate Nginx
+
+```bash
+nginx -t
+systemctl reload nginx
+```
+
+## Step 11 — Test Application
+
+```bash
+curl -I http://myapp.example.go.id
+```
+
+---
+
+# Backup
+
+Backup directory tersedia di:
+
+```text
+/var/apps/myapp/backup/
+```
+
+Dapat digunakan untuk:
+
+- Database backup
+- Application backup
+- Configuration backup
+- Deployment backup
+
+Backup production sebaiknya tidak hanya disimpan pada server yang sama.
+
+Gunakan sistem backup terpisah untuk perlindungan terhadap:
+
+- Hardware failure
+- Disk failure
+- Accidental deletion
+- Ransomware
+- Application compromise
 
 ---
 
@@ -728,281 +1370,158 @@ Restart:
 docker compose restart
 ```
 
-View logs:
-
-```bash
-docker compose logs -f
-```
-
-View container:
+Status:
 
 ```bash
 docker compose ps
 ```
 
-Masuk ke container:
+Logs:
 
 ```bash
-docker exec -it myapp-php bash
+docker compose logs -f
 ```
 
----
-
-# Laravel Deployment
-
-Source code Laravel berada di:
-
-```text
-/var/apps/myapp/htdocs/
-```
-
-Document root:
-
-```text
-/var/apps/myapp/htdocs/public
-```
-
-Writable directory:
-
-```text
-/var/apps/myapp/data/writable/
-```
-
-Konsep mapping:
-
-```text
-Laravel
-   │
-   ├── storage
-   │      │
-   │      └── /var/apps/myapp/data/writable/storage
-   │
-   └── bootstrap/cache
-          │
-          └── /var/apps/myapp/data/writable/bootstrap-cache
-```
-
-Source code tetap read-only.
-
----
-
-# CodeIgniter 4 Deployment
-
-Source code:
-
-```text
-/var/apps/myapp/htdocs/
-```
-
-Document root:
-
-```text
-/var/apps/myapp/htdocs/public
-```
-
-Writable directory:
-
-```text
-/var/apps/myapp/data/writable/
-```
-
-Mapping:
-
-```text
-/var/apps/myapp/data/writable/
-        │
-        ▼
-/var/www/html/writable
-```
-
----
-
-# Generic PHP Deployment
-
-Untuk aplikasi PHP generic:
-
-```text
-/var/apps/myapp/
-├── htdocs/
-├── data/
-│   └── writable/
-├── logs/
-└── backup/
-```
-
-Document root:
-
-```text
-/var/apps/myapp/htdocs
-```
-
-Writable application data:
-
-```text
-/var/apps/myapp/data/writable
-```
-
----
-
-# Backup
-
-Directory backup aplikasi disediakan pada:
-
-```text
-/var/apps/myapp/backup/
-```
-
-Directory ini dapat digunakan untuk:
-
-* Database backup
-* Application backup
-* Configuration backup
-* Deployment backup
-
-Backup sebaiknya dikelola menggunakan sistem backup terpisah dan tidak hanya disimpan pada server production.
-
----
-
-# Application Isolation
-
-Setiap aplikasi mendapatkan:
-
-```text
-Container
-Docker network
-PHP-FPM socket
-Docker Compose
-Writable directory
-Nginx virtual host
-Application log
-Backup directory
-```
-
-Contoh:
-
-```text
-myapp
-│
-├── myapp-php
-├── myapp-network
-├── /run/php/myapp.sock
-└── /var/apps/myapp/
-
-
-myapp2
-│
-├── myapp2-php
-├── myapp2-network
-├── /run/php/myapp2.sock
-└── /var/apps/myapp2/
-```
-
-Dengan demikian konfigurasi masing-masing aplikasi tetap terisolasi.
-
----
-
-# Recommended Production Layout
-
-```text
-/opt/
-│
-├── docker-php/
-│   ├── README.md
-│   ├── create-php-app.sh
-│   ├── images/
-│   │   ├── 7.4/
-│   │   ├── 8.3/
-│   │   ├── 8.4/
-│   │   └── 8.5/
-│   └── templates/
-│
-└── docker-apps/
-    ├── myapp/
-    ├── myapp2/
-    └── myapp3/
-
-
-/var/
-└── apps/
-    ├── myapp/
-    │   ├── htdocs/
-    │   ├── data/
-    │   ├── logs/
-    │   └── backup/
-    │
-    ├── myapp2/
-    │   ├── htdocs/
-    │   ├── data/
-    │   ├── logs/
-    │   └── backup/
-    │
-    └── myapp3/
-        ├── htdocs/
-        ├── data/
-        ├── logs/
-        └── backup/
-```
-
----
-
-# Upgrade PHP
-
-Aplikasi dapat menggunakan versi PHP berbeda tanpa memengaruhi aplikasi lainnya.
-
-Contoh:
-
-```text
-myapp  → PHP 8.3
-myapp2 → PHP 8.4
-myapp3 → PHP 8.5
-```
-
-Versi PHP aplikasi ditentukan pada:
-
-```text
-/opt/docker-apps/myapp/docker-compose.yml
-```
-
-Contoh:
-
-```yaml
-image: local/php:8.4
-```
-
-Setelah perubahan:
+Shell:
 
 ```bash
-cd /opt/docker-apps/myapp
+docker compose exec php bash
+```
 
-docker compose up -d --force-recreate
+---
+
+# Troubleshooting
+
+## Check Container
+
+```bash
+docker compose ps
+```
+
+## Check PHP-FPM Logs
+
+```bash
+docker compose logs --tail=100 php
+```
+
+## Check Socket
+
+```bash
+ls -lah /run/php/
+```
+
+## Check Nginx
+
+```bash
+nginx -t
+```
+
+## Check Nginx Error Log
+
+```bash
+tail -f /var/log/nginx/myapp.error.log
+```
+
+## Check Application Logs
+
+```bash
+ls -lah /var/apps/myapp/logs/
 ```
 
 ---
 
 # Security Recommendations
 
-Untuk deployment production, disarankan:
+Untuk deployment production:
 
-* Gunakan HTTPS.
-* Gunakan firewall.
-* Batasi akses database.
-* Jangan expose PHP-FPM ke internet.
-* Gunakan Nginx sebagai web server.
-* Gunakan WAF untuk aplikasi yang membutuhkan perlindungan tambahan.
-* Pisahkan source code dan writable directory.
-* Lakukan backup secara berkala.
-* Monitor container dan host.
-* Gunakan logging terpusat.
-* Update PHP image secara berkala.
-* Migrasikan aplikasi PHP 7.4 ke versi PHP yang masih didukung.
+- Gunakan HTTPS.
+- Gunakan firewall.
+- Batasi akses database.
+- Jangan expose PHP-FPM ke internet.
+- Gunakan Unix socket untuk Nginx → PHP-FPM.
+- Gunakan TCP untuk PHP → database.
+- Gunakan WAF jika diperlukan.
+- Pisahkan source code dan writable directory.
+- Jangan menyimpan credential di Git.
+- Backup database secara berkala.
+- Simpan backup pada lokasi terpisah.
+- Monitor host dan container.
+- Gunakan centralized logging bila diperlukan.
+- Update PHP images secara berkala.
+- Migrasikan PHP 7.4 legacy application ke versi yang masih didukung.
+- Pastikan dependency Composer sesuai dengan versi PHP.
+
+---
+
+# Important Operational Notes
+
+## Database
+
+MariaDB adalah standar database project.
+
+MySQL tetap didukung.
+
+Generator tidak melakukan migrasi otomatis antara MariaDB dan MySQL.
+
+Existing production database tidak diganti secara otomatis.
+
+## Database Root
+
+Application generator tidak mengubah password atau konfigurasi akun root database.
+
+Root database sebaiknya hanya dapat digunakan dari lokasi administrasi yang dipercaya.
+
+## Database Credentials
+
+File:
+
+```text
+/opt/docker-apps/<application-name>/db-credentials.env
+```
+
+berisi credential database dan harus dijaga:
+
+```text
+root:root
+0600
+```
+
+Jangan commit file tersebut ke Git.
+
+## Docker Network
+
+Setiap aplikasi mendapatkan network sendiri:
+
+```text
+<application-name>-network
+```
+
+Network menggunakan:
+
+```text
+driver: bridge
+```
+
+Generator membaca subnet dan gateway aktual dari Docker setelah network dibuat.
+
+Docker Compose dapat menampilkan warning bahwa network telah dibuat di luar Compose.
+Ini merupakan konsekuensi dari network yang dibuat oleh generator dan tidak mengubah fungsi container.
+
+## Composer
+
+Composer tidak termasuk dalam PHP-FPM runtime image.
+
+Dependency aplikasi harus dipasang menggunakan environment build/deployment yang sesuai.
+
+Hal ini menjaga runtime image tetap fokus pada PHP-FPM dan mengurangi komponen yang tidak diperlukan di production runtime.
 
 ---
 
 # Project Goals
 
-Project `docker-php` bertujuan menjadi standar deployment PHP-FPM untuk server yang menjalankan banyak aplikasi web.
+Project `docker-php` bertujuan menyediakan standar deployment PHP-FPM untuk server yang menjalankan banyak aplikasi web.
 
-Target utama:
+Target:
 
 ```text
 Consistency
@@ -1022,6 +1541,40 @@ Scalability
 
 ---
 
+# Release
+
+Current release:
+
+```text
+1.1.0
+```
+
+Release date:
+
+```text
+2026-09-18
+```
+
+Major changes in 1.1.0:
+
+- PHP 8.2 support
+- MariaDB standardized as database platform
+- MySQL compatibility retained
+- Automatic database creation
+- Automatic database user creation
+- Automatic secure database password generation
+- Automatic database credentials file
+- Dynamic Docker subnet detection
+- Dynamic database user host restriction
+- Domain-aware application generation
+- Improved application generator validation
+- Improved password generation
+- Laravel, CodeIgniter 4, and Generic PHP deployment templates
+
+See [CHANGELOG.md](CHANGELOG.md) for complete release history.
+
+---
+
 # License
 
 Repository ini merupakan infrastructure dan deployment template.
@@ -1035,3 +1588,11 @@ Lisensi dapat ditentukan sesuai kebutuhan organisasi atau project yang menggunak
 **NR Technology**
 
 Infrastructure, DevOps, Cybersecurity, and Web Server Engineering.
+
+---
+
+# Repository
+
+GitHub:
+
+https://github.com/NRTechnology/docker-php
