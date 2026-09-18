@@ -30,10 +30,10 @@ Examples:
   $0 legacy-app 7.4 generic legacy.example.go.id
 
 Description:
-  app-name     Nama aplikasi / identifier internal.
-  php-version  Versi PHP-FPM yang digunakan.
-  framework    Framework aplikasi.
-  domain-name  Domain yang digunakan oleh Nginx.
+  app-name      Nama aplikasi / identifier internal.
+  php-version   Versi PHP-FPM yang digunakan.
+  framework     Framework aplikasi.
+  domain-name   Domain yang digunakan oleh Nginx.
 USAGE
     exit 1
 }
@@ -137,6 +137,9 @@ command -v nginx >/dev/null 2>&1 \
 docker compose version >/dev/null 2>&1 \
     || die "Docker Compose plugin tidak ditemukan."
 
+command -v mysql >/dev/null 2>&1 \
+    || die "MySQL/MariaDB client tidak ditemukan."
+
 
 # ==============================================================================
 # APPLICATION PATHS
@@ -161,6 +164,14 @@ SOCKET_PATH="${PHP_RUN_DIR}/${APP_NAME}.sock"
 IMAGE_NAME="local/php:${PHP_VERSION}"
 NETWORK_NAME="${APP_NAME}-network"
 CONTAINER_NAME="${APP_NAME}-php"
+
+# ==============================================================================
+# DATABASE SETTINGS
+# ==============================================================================
+
+DB_NAME="${APP_NAME}"
+DB_USER="${APP_NAME}"
+DB_CREDENTIALS_FILE="${DOCKER_APP_ROOT}/db-credentials.env"
 
 
 # ==============================================================================
@@ -303,6 +314,214 @@ chmod 0750 "$APP_BACKUP"
 # PHP-FPM socket directory
 chown root:www-data "$PHP_RUN_DIR"
 chmod 0775 "$PHP_RUN_DIR"
+
+
+# ==============================================================================
+# DOCKER NETWORK
+# ==============================================================================
+
+log "Membuat Docker network..."
+
+if docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
+    die "Docker network sudah ada: $NETWORK_NAME"
+fi
+
+docker network create \
+    --driver bridge \
+    "$NETWORK_NAME" >/dev/null \
+    || die "Gagal membuat Docker network: $NETWORK_NAME"
+
+log "Docker network berhasil dibuat: $NETWORK_NAME"
+
+# Ambil subnet aktual yang diberikan Docker.
+NETWORK_SUBNET="$(
+    docker network inspect "$NETWORK_NAME" \
+        --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
+)"
+
+# Ambil gateway aktual yang diberikan Docker.
+NETWORK_GATEWAY="$(
+    docker network inspect "$NETWORK_NAME" \
+        --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+)"
+
+[[ -n "$NETWORK_SUBNET" ]] \
+    || die "Subnet Docker network tidak dapat ditentukan."
+
+[[ -n "$NETWORK_GATEWAY" ]] \
+    || die "Gateway Docker network tidak dapat ditentukan."
+
+log "Docker subnet  : $NETWORK_SUBNET"
+log "Docker gateway : $NETWORK_GATEWAY"
+
+
+# ==============================================================================
+# GENERATE MYSQL HOST PATTERN
+# ==============================================================================
+
+NETWORK_CIDR="${NETWORK_SUBNET#*/}"
+NETWORK_BASE="${NETWORK_SUBNET%/*}"
+
+IFS='.' read -r OCT1 OCT2 OCT3 OCT4 <<< "$NETWORK_BASE"
+
+case "$NETWORK_CIDR" in
+
+    8)
+        MYSQL_HOST_PATTERN="${OCT1}.%"
+        ;;
+
+    16)
+        MYSQL_HOST_PATTERN="${OCT1}.${OCT2}.%"
+        ;;
+
+    24)
+        MYSQL_HOST_PATTERN="${OCT1}.${OCT2}.${OCT3}.%"
+        ;;
+
+    *)
+        die "Subnet Docker tidak didukung untuk automatic MySQL host restriction: $NETWORK_SUBNET"
+        ;;
+
+esac
+
+log "MariaDB allowed host: ${MYSQL_HOST_PATTERN}"
+
+
+# ==============================================================================
+# MYSQL / MARIADB DATABASE
+# ==============================================================================
+
+log "Memeriksa koneksi MySQL/MariaDB..."
+
+mysql -e "SELECT 1;" >/dev/null 2>&1 \
+    || die "Tidak dapat terhubung ke MySQL/MariaDB menggunakan akun saat ini."
+
+log "Koneksi MySQL/MariaDB berhasil."
+
+
+# ==============================================================================
+# CHECK EXISTING DATABASE
+# ==============================================================================
+
+DB_EXISTS="$(
+    mysql -Nse \
+        "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='${DB_NAME}';"
+)"
+
+[[ "$DB_EXISTS" == "0" ]] \
+    || die "Database sudah ada: ${DB_NAME}"
+
+
+# ==============================================================================
+# CHECK EXISTING MYSQL USER
+# ==============================================================================
+
+MYSQL_USER_EXISTS="$(
+    mysql -Nse \
+        "SELECT COUNT(*) FROM mysql.user WHERE User='${DB_USER}' AND Host='${MYSQL_HOST_PATTERN}';"
+)"
+
+[[ "$MYSQL_USER_EXISTS" == "0" ]] \
+    || die "MySQL user sudah ada: '${DB_USER}'@'${MYSQL_HOST_PATTERN}'"
+
+
+# ==============================================================================
+# GENERATE MYSQL PASSWORD
+# ==============================================================================
+
+log "Generate password database..."
+
+if command -v openssl >/dev/null 2>&1; then
+
+    MYSQL_PASSWORD="$(
+        openssl rand -base64 48 \
+        | tr -dc 'A-Za-z0-9_@%+=-' \
+        | head -c 32
+    )"
+
+else
+
+    MYSQL_PASSWORD="$(
+        tr -dc 'A-Za-z0-9_@%+=-' < /dev/urandom \
+        | head -c 32
+    )"
+
+fi
+
+[[ ${#MYSQL_PASSWORD} -ge 24 ]] \
+    || die "Gagal membuat password database yang cukup kuat."
+
+
+# ==============================================================================
+# ESCAPE MYSQL PASSWORD
+# ==============================================================================
+
+MYSQL_PASSWORD_SQL="$(
+    printf '%s' "$MYSQL_PASSWORD" \
+    | sed "s/'/''/g"
+)"
+
+
+# ==============================================================================
+# CREATE MYSQL DATABASE
+# ==============================================================================
+
+log "Membuat database: ${DB_NAME}..."
+
+mysql <<SQL
+CREATE DATABASE \`${DB_NAME}\`
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
+SQL
+
+log "Database berhasil dibuat: ${DB_NAME}"
+
+
+# ==============================================================================
+# CREATE MYSQL USER
+# ==============================================================================
+
+log "Membuat MySQL user..."
+
+mysql <<SQL
+CREATE USER '${DB_USER}'@'${MYSQL_HOST_PATTERN}'
+    IDENTIFIED BY '${MYSQL_PASSWORD_SQL}';
+
+GRANT ALL PRIVILEGES
+    ON \`${DB_NAME}\`.*
+    TO '${DB_USER}'@'${MYSQL_HOST_PATTERN}';
+
+FLUSH PRIVILEGES;
+SQL
+
+log "MySQL user berhasil dibuat:"
+log "  User : ${DB_USER}"
+log "  Host : ${MYSQL_HOST_PATTERN}"
+
+
+# ==============================================================================
+# SAVE DATABASE CREDENTIALS
+# ==============================================================================
+
+log "Menyimpan database credentials..."
+
+cat > "$DB_CREDENTIALS_FILE" <<EOF
+# Database credentials generated by create-php-app.sh
+# Application: ${APP_NAME}
+
+DB_CONNECTION=mysql
+DB_HOST=${NETWORK_GATEWAY}
+DB_PORT=3306
+DB_DATABASE=${DB_NAME}
+DB_USERNAME=${DB_USER}
+DB_PASSWORD=${MYSQL_PASSWORD}
+EOF
+
+chown root:root "$DB_CREDENTIALS_FILE"
+chmod 0600 "$DB_CREDENTIALS_FILE"
+
+log "Database credentials disimpan:"
+log "  ${DB_CREDENTIALS_FILE}"
 
 
 # ==============================================================================
@@ -603,7 +822,20 @@ Compose     : ${COMPOSE_FILE}
 FPM Pool    : ${FPM_CONFIG}
 Container   : ${CONTAINER_NAME}
 Network     : ${NETWORK_NAME}
+Subnet      : ${NETWORK_SUBNET}
+Gateway     : ${NETWORK_GATEWAY}
 Image       : ${IMAGE_NAME}
+
+============================================================
+Database
+============================================================
+
+Database    : ${DB_NAME}
+Username    : ${DB_USER}
+Host        : ${NETWORK_GATEWAY}
+Port        : 3306
+Allowed     : ${MYSQL_HOST_PATTERN}
+Credentials : ${DB_CREDENTIALS_FILE}
 
 ============================================================
 Nginx
@@ -627,28 +859,38 @@ Next Steps
 
    ${APP_HTDOCS}
 
-2. Check Docker Compose:
+2. Check database credentials:
+
+   cat ${DB_CREDENTIALS_FILE}
+
+3. Configure Laravel .env / application configuration
+   menggunakan database credentials tersebut.
+
+4. Install application dependencies separately.
+   Composer TIDAK termasuk dalam PHP-FPM runtime image.
+
+5. Check Docker Compose:
 
    cd ${DOCKER_APP_ROOT}
    docker compose config
 
-3. Start PHP-FPM container:
+6. Start PHP-FPM container:
 
    docker compose up -d
 
-4. Check container:
+7. Check container:
 
    docker compose ps
 
-5. Check PHP-FPM logs:
+8. Check PHP-FPM logs:
 
    docker compose logs -f php
 
-6. Reload Nginx:
+9. Reload Nginx:
 
    systemctl reload nginx
 
-7. Test domain:
+10. Test domain:
 
    curl -I http://${DOMAIN_NAME}
 
