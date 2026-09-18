@@ -9,9 +9,10 @@ Repository ini menyediakan standar deployment PHP-FPM berbasis Docker dengan:
 - MySQL tetap didukung
 - PHP-FPM berjalan di dalam container
 - Isolasi container per aplikasi
-- Read-only application source
-- Writable directory terpisah
+- Application source mounted read-only
+- Writable runtime directory dipisahkan dari source
 - PHP-FPM menggunakan Unix socket
+- PHP ke database menggunakan TCP
 - Docker container hardening
 - Dukungan Laravel, CodeIgniter 4, dan Generic PHP
 - Dukungan multiple PHP versions dalam satu server
@@ -20,7 +21,7 @@ Repository ini menyediakan standar deployment PHP-FPM berbasis Docker dengan:
 
 ---
 
-## Architecture
+# Architecture
 
 ```text
                          PRODUCTION SERVER
@@ -34,21 +35,20 @@ Repository ini menyediakan standar deployment PHP-FPM berbasis Docker dengan:
 │                              ▼                                │
 │                     /run/php/*.sock                           │
 │                              │                                │
-│             ┌────────────────┼────────────────┐               │
-│             │                │                │               │
-│             ▼                ▼                ▼               │
-│        PHP-FPM            PHP-FPM          PHP-FPM             │
-│        Container          Container        Container           │
+│              ┌───────────────┼───────────────┐                │
+│              │               │               │                │
+│              ▼               ▼               ▼                │
+│          PHP-FPM         PHP-FPM         PHP-FPM              │
+│          Container       Container       Container             │
 │                                                               │
-│        PHP 8.2            PHP 8.4          PHP 8.5             │
-│                                                               │
-│             │                │                │               │
-│             └────────────────┼────────────────┘               │
+│          PHP 8.3         PHP 8.4         PHP 8.5              │
+│              │               │               │                │
+│              └───────────────┼───────────────┘                │
 │                              │                                │
 │                              │ TCP :3306                      │
 │                              ▼                                │
 │                       MariaDB / MySQL                         │
-│                         Host Server                           │
+│                          Host Server                           │
 │                                                               │
 └───────────────────────────────────────────────────────────────┘
 ```
@@ -60,7 +60,7 @@ Setiap aplikasi memiliki:
 - PHP-FPM Unix socket sendiri
 - Docker Compose configuration sendiri
 - Nginx virtual host sendiri
-- Writable directory sendiri
+- Writable runtime directory sendiri
 - Application log directory sendiri
 - Backup directory sendiri
 - Database dan database user sendiri
@@ -80,7 +80,7 @@ legacy  → PHP 7.4
 
 # Supported PHP Versions
 
-| PHP Version | Docker Image | Recommended Use |
+| PHP Version | Docker Image | Use |
 |---|---|---|
 | PHP 7.4 | `local/php:7.4` | Legacy application |
 | PHP 8.2 | `local/php:8.2` | Application compatible with PHP 8.2 |
@@ -112,25 +112,98 @@ Document root:
 /var/apps/<application-name>/htdocs/public
 ```
 
-Writable directory:
+Laravel menggunakan writable directory yang dipisahkan secara spesifik dari source code:
 
 ```text
-/var/apps/<application-name>/data/writable/
-├── storage/
+/var/apps/<application-name>/data/
+
+├── storage-app/
+├── storage-framework/
+├── storage-logs/
 └── bootstrap-cache/
 ```
 
 Mapping ke container:
 
 ```text
-storage
-    ↓
-/var/www/html/storage
+data/storage-app
+        ↓
+/var/www/html/storage/app
 
-bootstrap-cache
-    ↓
+data/storage-framework
+        ↓
+/var/www/html/storage/framework
+
+data/storage-logs
+        ↓
+/var/www/html/storage/logs
+
+data/bootstrap-cache
+        ↓
 /var/www/html/bootstrap/cache
 ```
+
+Application source tetap di-mount read-only.
+
+```text
+/var/apps/<application-name>/htdocs
+        ↓
+/var/www/html:ro
+```
+
+### Laravel Vendor
+
+Generator **tidak membuat `data/vendor` dan tidak melakukan mount `data/vendor`**.
+
+Dependency Laravel berada pada:
+
+```text
+/var/apps/<application-name>/htdocs/vendor
+```
+
+Direktori `vendor` harus tersedia sebagai bagian dari deployment application source/deployment artifact sebelum Laravel dijalankan.
+
+Contoh struktur:
+
+```text
+/var/apps/<application-name>/htdocs/
+
+├── app/
+├── artisan
+├── bootstrap/
+├── composer.json
+├── composer.lock
+├── config/
+├── public/
+├── resources/
+├── routes/
+├── storage/
+└── vendor/
+```
+
+### Composer
+
+Composer **tidak termasuk dalam PHP-FPM runtime image**.
+
+Untuk Laravel, generator menyiapkan Composer secara terpisah:
+
+```text
+/var/apps/<application-name>/composer/composer
+```
+
+Composer binary kemudian di-mount read-only ke container:
+
+```text
+/var/apps/<application-name>/composer/composer
+        ↓
+/usr/local/bin/composer:ro
+```
+
+Composer digunakan untuk proses dependency management/deployment, bukan sebagai komponen permanen yang dibangun ke dalam PHP-FPM image.
+
+> **Catatan:** Jika application source menggunakan mount read-only, `composer install` tidak dapat membuat `vendor/` langsung di dalam `/var/www/html`. Dependency harus disiapkan melalui proses deployment yang sesuai sebelum runtime production digunakan.
+
+PHP execution diblokir pada Laravel writable directories.
 
 ## CodeIgniter 4
 
@@ -144,6 +217,7 @@ Writable directory:
 
 ```text
 /var/apps/<application-name>/data/writable/
+
 ├── cache/
 ├── logs/
 ├── session/
@@ -157,6 +231,10 @@ Mapping ke container:
         ↓
 /var/www/html/writable
 ```
+
+PHP execution diblokir pada writable directory.
+
+CodeIgniter 4 tidak menggunakan workflow Composer Laravel yang disediakan oleh generator.
 
 ## Generic PHP
 
@@ -172,6 +250,7 @@ Writable directory:
 
 ```text
 /var/apps/<application-name>/data/writable/
+
 ├── cache/
 ├── logs/
 ├── session/
@@ -185,6 +264,8 @@ Mapping ke container:
         ↓
 /var/www/html/data
 ```
+
+PHP execution diblokir pada writable data directory.
 
 ---
 
@@ -235,10 +316,12 @@ Mapping ke container:
 
 ```text
 /opt/
+
 ├── docker-php/
 └── docker-apps/
 
 /var/
+
 └── apps/
 ```
 
@@ -246,7 +329,7 @@ Mapping ke container:
 
 Repository utama yang berisi:
 
-- Dockerfile PHP
+- PHP Dockerfile
 - PHP configuration
 - PHP-FPM configuration
 - Application generator
@@ -265,6 +348,7 @@ Contoh:
 
 ```text
 /opt/docker-apps/myapp/
+
 ├── docker-compose.yml
 ├── zz-custom.conf
 └── db-credentials.env
@@ -276,8 +360,29 @@ Database credentials dibuat otomatis oleh `create-php-app.sh`.
 
 Berisi source code dan runtime data aplikasi.
 
+Untuk Laravel:
+
 ```text
 /var/apps/myapp/
+
+├── htdocs/
+│   └── vendor/
+├── data/
+│   ├── storage-app/
+│   ├── storage-framework/
+│   ├── storage-logs/
+│   └── bootstrap-cache/
+├── composer/
+│   └── composer
+├── logs/
+└── backup/
+```
+
+Untuk CodeIgniter 4 dan Generic PHP:
+
+```text
+/var/apps/myapp/
+
 ├── htdocs/
 ├── data/
 │   └── writable/
@@ -287,10 +392,11 @@ Berisi source code dan runtime data aplikasi.
 
 | Directory | Fungsi | Access |
 |---|---|---|
-| `htdocs/` | Application source | Read Only |
-| `data/writable/` | Runtime data | Read/Write |
+| `htdocs/` | Application source | Read Only di container |
+| `data/` | Runtime data terpisah | Read/Write sesuai kebutuhan |
+| `composer/` | Composer binary untuk Laravel | Read Only di container |
 | `logs/` | Application logs | Read/Write |
-| `backup/` | Application backup | Read/Write |
+| `backup/` | Application/database backup | Read/Write |
 
 ---
 
@@ -314,7 +420,9 @@ MySQL tetap dapat digunakan apabila server telah menggunakan MySQL.
 ```bash
 mkdir -p /opt
 cd /opt
+
 git clone https://github.com/NRTechnology/docker-php.git docker-php
+
 cd /opt/docker-php
 ```
 
@@ -341,7 +449,7 @@ Requirement installation dilakukan menggunakan:
 scripts/check-requirements.sh
 ```
 
-Script digunakan untuk memeriksa dan memasang komponen dasar:
+Script digunakan untuk memeriksa dan, jika diperlukan, memasang komponen dasar:
 
 - Nginx
 - Docker Engine
@@ -353,6 +461,7 @@ Jalankan:
 
 ```bash
 cd /opt/docker-php
+
 ./scripts/check-requirements.sh
 ```
 
@@ -365,12 +474,24 @@ docker compose version
 mariadb --version
 ```
 
+Jika menggunakan MySQL sebagai database server, pastikan MySQL client tersedia:
+
+```bash
+mysql --version
+```
+
 Verifikasi service:
 
 ```bash
 systemctl status nginx
 systemctl status docker
 systemctl status mariadb
+```
+
+Jika server menggunakan MySQL:
+
+```bash
+systemctl status mysql
 ```
 
 > **Important:** Script requirement tidak secara otomatis mengganti konfigurasi production yang sudah ada.
@@ -385,7 +506,7 @@ Script juga tidak secara otomatis mengubah:
 - Reverse proxy
 - Production-specific network policy
 
-### MariaDB Security
+## MariaDB Security
 
 `mariadb-secure-installation` tidak dijalankan otomatis karena merupakan proses interaktif.
 
@@ -437,6 +558,45 @@ Jika `mariadb` tersedia, client tersebut digunakan.
 
 Jika tidak tersedia tetapi `mysql` tersedia, client MySQL digunakan.
 
+Generator tidak mengubah database server yang sudah berjalan hanya karena client yang tersedia berbeda.
+
+---
+
+# Database User Security
+
+Setiap aplikasi mendapatkan database dan database user sendiri.
+
+Generator:
+
+- membuat database
+- membuat database user
+- menghasilkan password acak
+- memberikan privilege hanya ke database aplikasi
+- menyimpan credentials dalam file terpisah
+- membatasi host user berdasarkan subnet Docker aktual
+
+Contoh:
+
+```text
+Docker subnet:
+
+172.24.0.0/16
+```
+
+Database user dapat dibatasi menjadi:
+
+```text
+'myapp'@'172.24.%'
+```
+
+bukan:
+
+```text
+'myapp'@'%'
+```
+
+Host restriction dibuat berdasarkan subnet Docker aktual, bukan hard-coded pada satu range tertentu.
+
 ---
 
 # Build PHP Images
@@ -453,6 +613,7 @@ scripts/build-image.sh
 
 ```bash
 cd /opt/docker-php
+
 ./scripts/build-image.sh
 ```
 
@@ -472,11 +633,11 @@ Menu menyediakan pilihan:
 ## Build Specific Version
 
 ```bash
+./scripts/build-image.sh 7.4
 ./scripts/build-image.sh 8.2
 ./scripts/build-image.sh 8.3
 ./scripts/build-image.sh 8.4
 ./scripts/build-image.sh 8.5
-./scripts/build-image.sh 7.4
 ```
 
 ## Build All Images
@@ -519,6 +680,53 @@ docker run --rm local/php:8.4 php -v
 docker run --rm local/php:8.4 php -m
 docker run --rm local/php:8.4 php-fpm -t
 ```
+
+---
+
+# Composer
+
+Composer **tidak termasuk dalam PHP-FPM runtime image**.
+
+Hal ini disengaja agar image runtime tetap fokus pada:
+
+```text
+PHP
+PHP-FPM
+Required PHP extensions
+Runtime configuration
+```
+
+dan tidak membawa dependency-management tool yang tidak diperlukan oleh runtime aplikasi.
+
+Untuk Laravel, `create-php-app.sh` menyiapkan Composer secara terpisah.
+
+Lokasi host:
+
+```text
+/var/apps/<application-name>/composer/composer
+```
+
+Lokasi container:
+
+```text
+/usr/local/bin/composer
+```
+
+Mount:
+
+```yaml
+- /var/apps/<application-name>/composer/composer:/usr/local/bin/composer:ro
+```
+
+Composer binary diambil dari Composer image secara terpisah dan tidak dibangun ke dalam image PHP-FPM.
+
+Verifikasi:
+
+```bash
+docker compose exec php composer --version
+```
+
+Composer hanya relevan untuk workflow aplikasi yang memang menggunakan Composer. CI4 dan Generic PHP tidak menggunakan workflow Composer Laravel yang dibuat oleh generator.
 
 ---
 
@@ -599,8 +807,33 @@ Memvalidasi:
 
 ## 2. Create Application Directories
 
+Struktur dasar:
+
 ```text
 /var/apps/myapp/
+```
+
+Untuk Laravel:
+
+```text
+/var/apps/myapp/
+
+├── htdocs/
+├── data/
+│   ├── storage-app/
+│   ├── storage-framework/
+│   ├── storage-logs/
+│   └── bootstrap-cache/
+├── composer/
+├── logs/
+└── backup/
+```
+
+Untuk CodeIgniter 4 dan Generic PHP:
+
+```text
+/var/apps/myapp/
+
 ├── htdocs/
 ├── data/
 │   └── writable/
@@ -608,7 +841,27 @@ Memvalidasi:
 └── backup/
 ```
 
-## 3. Create Docker Network
+Generator **tidak membuat `data/vendor`**.
+
+## 3. Prepare Composer for Laravel
+
+Untuk aplikasi Laravel, generator memastikan Composer tersedia dan menyiapkan binary secara terpisah.
+
+Composer disimpan pada:
+
+```text
+/var/apps/myapp/composer/composer
+```
+
+Binary tersebut kemudian di-mount read-only ke container.
+
+Composer tidak dimasukkan ke image:
+
+```text
+local/php:<version>
+```
+
+## 4. Create Docker Network
 
 Setiap aplikasi mendapatkan network sendiri:
 
@@ -622,9 +875,9 @@ Network menggunakan:
 driver: bridge
 ```
 
-Subnet Docker dideteksi secara dinamis setelah network dibuat.
+Subnet dan gateway Docker dideteksi secara dinamis setelah network dibuat.
 
-## 4. Create Database
+## 5. Create Database
 
 Generator secara otomatis membuat database:
 
@@ -639,7 +892,7 @@ utf8mb4
 utf8mb4_unicode_ci
 ```
 
-## 5. Create Database User
+## 6. Create Database User
 
 Generator membuat user:
 
@@ -653,7 +906,7 @@ User hanya diberikan privilege terhadap database aplikasi:
 myapp.*
 ```
 
-## 6. Generate Database Password
+## 7. Generate Database Password
 
 Password database dibuat otomatis menggunakan random generator:
 
@@ -669,7 +922,7 @@ atau fallback:
 
 Password tidak menggunakan password default.
 
-## 7. Restrict Database User Host
+## 8. Restrict Database User Host
 
 Host database user ditentukan berdasarkan subnet Docker aktual.
 
@@ -677,6 +930,7 @@ Contoh:
 
 ```text
 Docker subnet:
+
 172.24.0.0/16
 ```
 
@@ -693,6 +947,44 @@ Tujuannya menghindari penggunaan:
 ```
 
 yang terlalu luas.
+
+## 9. Generate Nginx Configuration
+
+Generator membuat konfigurasi virtual host berdasarkan domain aplikasi.
+
+Konfigurasi ditempatkan pada:
+
+```text
+/etc/nginx/sites-available/
+```
+
+dan diaktifkan melalui:
+
+```text
+/etc/nginx/sites-enabled/
+```
+
+## 10. Generate Docker Compose
+
+Generator membuat:
+
+```text
+/opt/docker-apps/myapp/docker-compose.yml
+```
+
+dan melakukan validasi:
+
+```bash
+docker compose config
+```
+
+Generator **tidak otomatis menjalankan**:
+
+```bash
+docker compose up -d
+```
+
+Administrator dapat meninjau konfigurasi terlebih dahulu.
 
 ---
 
@@ -735,8 +1027,7 @@ cat /opt/docker-apps/myapp/db-credentials.env
 
 > Jangan memasukkan file `db-credentials.env` ke Git repository.
 
-`DB_CONNECTION=mysql` digunakan karena nama driver database Laravel adalah `mysql`,
-baik ketika backend database menggunakan MySQL maupun MariaDB.
+`DB_CONNECTION=mysql` digunakan karena nama driver database Laravel adalah `mysql`, baik ketika backend database menggunakan MySQL maupun MariaDB.
 
 ---
 
@@ -746,6 +1037,7 @@ Generator membuat:
 
 ```text
 /opt/docker-apps/myapp/
+
 ├── docker-compose.yml
 ├── zz-custom.conf
 └── db-credentials.env
@@ -762,6 +1054,8 @@ Contoh:
 ```yaml
 image: local/php:8.4
 ```
+
+Untuk Laravel, konfigurasi juga menyediakan Composer binary secara read-only.
 
 ---
 
@@ -786,25 +1080,51 @@ Source code tidak dapat ditulis langsung oleh PHP-FPM.
 
 ## Writable Runtime Directory
 
-Directory yang membutuhkan write dipisahkan.
+Directory yang membutuhkan write dipisahkan dari source.
 
 Laravel:
 
 ```text
-storage
-bootstrap/cache
+/var/apps/myapp/data/storage-app
+/var/apps/myapp/data/storage-framework
+/var/apps/myapp/data/storage-logs
+/var/apps/myapp/data/bootstrap-cache
 ```
 
-CodeIgniter:
+Mapping:
 
 ```text
-writable
+storage-app
+    ↓
+/var/www/html/storage/app
+
+storage-framework
+    ↓
+/var/www/html/storage/framework
+
+storage-logs
+    ↓
+/var/www/html/storage/logs
+
+bootstrap-cache
+    ↓
+/var/www/html/bootstrap/cache
 ```
 
-Generic:
+CodeIgniter 4:
 
 ```text
-data
+/var/apps/myapp/data/writable
+    ↓
+/var/www/html/writable
+```
+
+Generic PHP:
+
+```text
+/var/apps/myapp/data/writable
+    ↓
+/var/www/html/data
 ```
 
 ## No New Privileges
@@ -891,6 +1211,7 @@ Contoh:
 
 ```text
 /run/php/
+
 ├── myapp.sock
 ├── myapp2.sock
 └── myapp3.sock
@@ -902,6 +1223,14 @@ Keuntungan:
 - Mengurangi attack surface
 - Tidak membutuhkan port 9001, 9002, 9003, dan seterusnya
 - Memudahkan multi-PHP deployment
+
+Socket menggunakan permission:
+
+```text
+owner : www-data
+group : www-data
+mode  : 0660
+```
 
 ---
 
@@ -928,7 +1257,7 @@ Contoh:
 /etc/nginx/sites-enabled/myapp.conf
 ```
 
-Generator otomatis membuat dan mengaktifkan virtual host.
+Generator otomatis membuat dan mengaktifkan virtual host setelah konfigurasi valid.
 
 ---
 
@@ -938,7 +1267,7 @@ Generated Nginx configuration menyediakan:
 
 - Security headers
 - Hidden-file protection
-- Sensitive file protection
+- Sensitive-file protection
 - PHP-FPM Unix socket
 - `try_files`
 - PHP execution restriction pada writable directories
@@ -982,19 +1311,25 @@ Generator juga menjalankan validasi Nginx selama proses pembuatan application.
 
 ```bash
 cd /opt/docker-apps/myapp
+
 docker compose config
 ```
 
-Generator juga menjalankan validasi `docker compose config` sebelum deployment selesai.
+Generator juga menjalankan validasi `docker compose config` sebelum proses pembuatan selesai.
 
 ---
 
 # Start Application
 
+Setelah konfigurasi ditinjau:
+
 ```bash
 cd /opt/docker-apps/myapp
+
 cat docker-compose.yml
+
 docker compose up -d
+
 docker compose ps
 ```
 
@@ -1010,6 +1345,11 @@ myapp-php    ...    Up
 
 ```bash
 docker compose logs --tail=50 php
+```
+
+Follow logs:
+
+```bash
 docker compose logs -f php
 ```
 
@@ -1030,6 +1370,52 @@ docker compose exec php php -m
 docker compose exec php php-fpm -t
 ```
 
+Composer untuk Laravel:
+
+```bash
+docker compose exec php composer --version
+```
+
+---
+
+# Database Connection Verification
+
+Database menggunakan TCP melalui Docker gateway.
+
+Cek gateway network:
+
+```bash
+docker network inspect myapp-network \
+  --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+```
+
+Contoh:
+
+```text
+172.24.0.1
+```
+
+Tes koneksi dari PHP:
+
+```bash
+docker compose exec php php -r '
+$pdo = new PDO(
+    "mysql:host=172.24.0.1;dbname=myapp;charset=utf8mb4",
+    "myapp",
+    "DATABASE_PASSWORD"
+);
+echo "DATABASE CONNECTION: OK\n";
+'
+```
+
+Jika berhasil:
+
+```text
+DATABASE CONNECTION: OK
+```
+
+> Gunakan password dari `db-credentials.env` dan jangan memasukkan credential database ke repository Git.
+
 ---
 
 # Laravel Deployment
@@ -1040,12 +1426,14 @@ Source:
 /var/apps/myapp/htdocs
 ```
 
-Pastikan:
+Pastikan source memiliki:
 
 ```text
 /var/apps/myapp/htdocs/artisan
 /var/apps/myapp/htdocs/composer.json
+/var/apps/myapp/htdocs/composer.lock
 /var/apps/myapp/htdocs/public
+/var/apps/myapp/htdocs/vendor
 ```
 
 Document root:
@@ -1054,9 +1442,33 @@ Document root:
 /var/apps/myapp/htdocs/public
 ```
 
-Install dependency dilakukan secara terpisah.
+Dependency application disiapkan secara terpisah dari runtime image.
 
 Composer tidak termasuk dalam PHP-FPM runtime image.
+
+Composer tersedia melalui:
+
+```text
+/var/apps/myapp/composer/composer
+```
+
+dan di-mount read-only ke:
+
+```text
+/usr/local/bin/composer
+```
+
+`vendor/` berada di source/deployment artifact:
+
+```text
+/var/apps/myapp/htdocs/vendor
+```
+
+Generator tidak membuat:
+
+```text
+/var/apps/myapp/data/vendor
+```
 
 Setelah dependency tersedia:
 
@@ -1064,13 +1476,31 @@ Setelah dependency tersedia:
 docker compose exec php php artisan --version
 ```
 
-Generate application key:
+> Perintah Artisan hanya dapat dijalankan setelah `vendor/autoload.php` tersedia.
+
+## Laravel Application Key
+
+Jika `.env` berada pada application source yang di-mount read-only, `php artisan key:generate` tidak dapat menulis file `.env` melalui container.
+
+Generate key:
 
 ```bash
-docker compose exec php php artisan key:generate
+docker compose exec php php artisan key:generate --show
 ```
 
-> Perintah Artisan hanya dapat dijalankan setelah dependency Composer tersedia.
+Kemudian masukkan nilai `APP_KEY` ke `.env` pada host.
+
+Contoh:
+
+```env
+APP_KEY=base64:<generated-key>
+```
+
+Setelah `.env` disiapkan, clear configuration cache bila diperlukan:
+
+```bash
+docker compose exec php php artisan config:clear
+```
 
 ---
 
@@ -1140,7 +1570,7 @@ Setiap aplikasi mendapatkan environment terisolasi:
 
 ```text
 Application
-│
+
 ├── PHP-FPM Container
 ├── Docker Network
 ├── PHP-FPM Socket
@@ -1156,12 +1586,14 @@ Contoh:
 
 ```text
 myapp
+
 ├── myapp-php
 ├── myapp-network
 ├── /run/php/myapp.sock
 └── /var/apps/myapp/
 
 myapp2
+
 ├── myapp2-php
 ├── myapp2-network
 ├── /run/php/myapp2.sock
@@ -1198,6 +1630,7 @@ Setelah perubahan:
 
 ```bash
 cd /opt/docker-apps/myapp
+
 docker compose up -d --force-recreate
 ```
 
@@ -1208,41 +1641,44 @@ Sebelum upgrade production, pastikan dependency aplikasi kompatibel dengan versi
 # Production Deployment Workflow
 
 ```text
-             SERVER PREPARATION
-                     │
-                     ▼
-        check-requirements.sh
-                     │
-                     ▼
-             Build PHP Images
-                     │
-                     ▼
-            test-images.sh
-                     │
-                     ▼
-           create-php-app.sh
-                     │
-          ┌──────────┼──────────┐
-          │          │          │
-          ▼          ▼          ▼
-       Network     Database   Nginx
-          │          │          │
-          └──────────┼──────────┘
-                     │
-                     ▼
-             Deploy Source Code
-                     │
-                     ▼
-            Install Dependencies
-                     │
-                     ▼
-             Start PHP-FPM
-                     │
-                     ▼
-             Validate Nginx
-                     │
-                     ▼
-              Application Test
+              SERVER PREPARATION
+                       │
+                       ▼
+             check-requirements.sh
+                       │
+                       ▼
+                Build PHP Images
+                       │
+                       ▼
+                 test-images.sh
+                       │
+                       ▼
+               create-php-app.sh
+                       │
+              ┌────────┼────────┐
+              │        │        │
+              ▼        ▼        ▼
+           Network  Database   Nginx
+              │        │        │
+              └────────┼────────┘
+                       │
+                       ▼
+               Deploy Source Code
+                       │
+                       ▼
+             Prepare Dependencies
+                       │
+                       ▼
+               Review Configuration
+                       │
+                       ▼
+                Start PHP-FPM
+                       │
+                       ▼
+                Validate Nginx
+                       │
+                       ▼
+                Application Test
 ```
 
 ---
@@ -1253,6 +1689,7 @@ Sebelum upgrade production, pastikan dependency aplikasi kompatibel dengan versi
 
 ```bash
 cd /opt/docker-php
+
 ./scripts/check-requirements.sh
 ```
 
@@ -1278,6 +1715,7 @@ cd /opt/docker-php
 
 ```bash
 cd /opt/docker-apps/myapp
+
 cat docker-compose.yml
 cat db-credentials.env
 ```
@@ -1290,13 +1728,37 @@ Copy or clone source code to:
 /var/apps/myapp/htdocs
 ```
 
-## Step 7 — Install Application Dependencies
+Untuk Laravel, pastikan deployment artifact menyediakan:
 
-Dependency installation dilakukan terpisah dari runtime image.
+```text
+vendor/
+```
+
+di dalam:
+
+```text
+/var/apps/myapp/htdocs/vendor
+```
+
+## Step 7 — Prepare Application Dependencies
+
+Dependency Laravel harus tersedia sebelum Artisan dijalankan.
+
+Composer tersedia secara terpisah:
+
+```text
+/var/apps/myapp/composer/composer
+```
+
+dan tidak termasuk dalam image PHP-FPM.
+
+Jika dependency dipersiapkan pada server deployment, jangan mengandalkan source mount read-only untuk membuat `vendor/` dari dalam runtime container.
 
 ## Step 8 — Start PHP-FPM
 
 ```bash
+cd /opt/docker-apps/myapp
+
 docker compose up -d
 ```
 
@@ -1320,6 +1782,8 @@ systemctl reload nginx
 ```bash
 curl -I http://myapp.example.go.id
 ```
+
+Untuk production, gunakan HTTPS.
 
 ---
 
@@ -1428,6 +1892,55 @@ tail -f /var/log/nginx/myapp.error.log
 ls -lah /var/apps/myapp/logs/
 ```
 
+## Check Composer
+
+Untuk Laravel:
+
+```bash
+docker compose exec php composer --version
+```
+
+Validasi:
+
+```bash
+docker compose exec php composer validate
+```
+
+## Check Laravel Vendor
+
+```bash
+ls -lah /var/apps/myapp/htdocs/vendor/
+```
+
+Pastikan:
+
+```text
+/var/apps/myapp/htdocs/vendor/autoload.php
+```
+
+tersedia sebelum menjalankan:
+
+```bash
+docker compose exec php php artisan --version
+```
+
+## Check Database
+
+Cek Docker gateway:
+
+```bash
+docker network inspect myapp-network \
+  --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+```
+
+Cek database user pada server database:
+
+```sql
+SELECT User, Host
+FROM mysql.user
+WHERE User = 'myapp';
+```
+
 ---
 
 # Security Recommendations
@@ -1504,16 +2017,68 @@ driver: bridge
 
 Generator membaca subnet dan gateway aktual dari Docker setelah network dibuat.
 
-Docker Compose dapat menampilkan warning bahwa network telah dibuat di luar Compose.
+Docker Compose dapat menampilkan warning bahwa network telah dibuat di luar Compose:
+
+```text
+a network with name <application-name>-network exists but was not created by compose
+```
+
 Ini merupakan konsekuensi dari network yang dibuat oleh generator dan tidak mengubah fungsi container.
 
 ## Composer
 
 Composer tidak termasuk dalam PHP-FPM runtime image.
 
-Dependency aplikasi harus dipasang menggunakan environment build/deployment yang sesuai.
+Untuk Laravel:
 
-Hal ini menjaga runtime image tetap fokus pada PHP-FPM dan mengurangi komponen yang tidak diperlukan di production runtime.
+- Composer binary disiapkan secara terpisah.
+- Composer binary berada di `/var/apps/<application-name>/composer/composer`.
+- Composer binary di-mount read-only ke `/usr/local/bin/composer`.
+- Generator tidak membuat `data/vendor`.
+- Generator tidak melakukan mount `data/vendor`.
+- `vendor/` berada pada `/var/apps/<application-name>/htdocs/vendor`.
+- Dependency harus tersedia sebelum Laravel Artisan dijalankan.
+
+## Application Source
+
+Application source di-mount read-only ke container:
+
+```text
+/var/apps/<application-name>/htdocs
+        ↓
+/var/www/html:ro
+```
+
+Directory yang membutuhkan write dipisahkan melalui bind mount read-write.
+
+## Laravel Runtime Directories
+
+Laravel menggunakan empat writable mount:
+
+```text
+/var/apps/<application-name>/data/storage-app
+        ↓
+/var/www/html/storage/app
+
+/var/apps/<application-name>/data/storage-framework
+        ↓
+/var/www/html/storage/framework
+
+/var/apps/<application-name>/data/storage-logs
+        ↓
+/var/www/html/storage/logs
+
+/var/apps/<application-name>/data/bootstrap-cache
+        ↓
+/var/www/html/bootstrap/cache
+```
+
+Tidak digunakan:
+
+```text
+/var/apps/<application-name>/data/writable/storage
+/var/apps/<application-name>/data/vendor
+```
 
 ---
 
@@ -1570,6 +2135,8 @@ Major changes in 1.1.0:
 - Improved application generator validation
 - Improved password generation
 - Laravel, CodeIgniter 4, and Generic PHP deployment templates
+- Composer separated from the PHP-FPM runtime image
+- Laravel writable directories separated into dedicated runtime mounts
 
 See [CHANGELOG.md](CHANGELOG.md) for complete release history.
 
