@@ -12,6 +12,11 @@ set -Eeuo pipefail
 #   - Docker Compose Plugin
 #   - MariaDB Server
 #
+# MariaDB Configuration:
+#   - bind-address = 0.0.0.0
+#   - root access restricted to localhost
+#   - root password is NOT configured by this script
+#
 # Supported:
 #   - Ubuntu
 #   - Debian
@@ -276,7 +281,7 @@ else
     install -m 0755 -d /etc/apt/keyrings
 
     curl -fsSL \
-        https://download.docker.com/linux/${OS_ID}/gpg \
+        "https://download.docker.com/linux/${OS_ID}/gpg" \
         -o /etc/apt/keyrings/docker.asc
 
     chmod a+r /etc/apt/keyrings/docker.asc
@@ -407,15 +412,11 @@ fi
 
 section "CHECK MARIADB"
 
-if command -v mariadb >/dev/null 2>&1 || command -v mysql >/dev/null 2>&1; then
+if command -v mariadb >/dev/null 2>&1; then
 
-    if command -v mariadb >/dev/null 2>&1; then
-        MARIADB_VERSION="$(mariadb --version)"
-    else
-        MARIADB_VERSION="$(mysql --version)"
-    fi
+    MARIADB_VERSION="$(mariadb --version)"
 
-    success "MariaDB client/server command tersedia."
+    success "MariaDB command tersedia."
     info "${MARIADB_VERSION}"
 
 else
@@ -462,29 +463,237 @@ if systemctl list-unit-files mariadb.service >/dev/null 2>&1; then
         fi
     fi
 
+else
+
+    error "mariadb.service tidak ditemukan."
+    exit 1
+
 fi
 
 # ------------------------------------------------------------
 # MARIADB VERSION
 # ------------------------------------------------------------
 
-if command -v mariadb >/dev/null 2>&1; then
+info "MariaDB version:"
+mariadb --version
 
-    info "MariaDB version:"
-    mariadb --version
+# ------------------------------------------------------------
+# MARIADB CONFIGURATION
+# ------------------------------------------------------------
+
+section "MARIADB NETWORK CONFIGURATION"
+
+MARIADB_CONFIG=""
+
+if [[ -f /etc/mysql/mariadb.conf.d/50-server.cnf ]]; then
+    MARIADB_CONFIG="/etc/mysql/mariadb.conf.d/50-server.cnf"
+elif [[ -f /etc/mysql/mariadb.conf.d/50-server.cnf ]]; then
+    MARIADB_CONFIG="/etc/mysql/mariadb.conf.d/50-server.cnf"
+elif [[ -f /etc/mysql/my.cnf ]]; then
+    MARIADB_CONFIG="/etc/mysql/my.cnf"
+else
+    error "File konfigurasi MariaDB tidak ditemukan."
+    exit 1
+fi
+
+info "MariaDB configuration:"
+info "${MARIADB_CONFIG}"
+
+# ------------------------------------------------------------
+# Backup MariaDB Configuration
+# ------------------------------------------------------------
+
+MARIADB_BACKUP="${MARIADB_CONFIG}.bak-$(date +%Y%m%d-%H%M%S)"
+
+cp -a "${MARIADB_CONFIG}" "${MARIADB_BACKUP}"
+
+success "Backup konfigurasi MariaDB dibuat:"
+info "${MARIADB_BACKUP}"
+
+# ------------------------------------------------------------
+# Configure bind-address
+# ------------------------------------------------------------
+
+info "Mengatur MariaDB bind-address menjadi 0.0.0.0..."
+
+if grep -Eq '^[[:space:]]*bind-address[[:space:]]*=' "${MARIADB_CONFIG}"; then
+
+    sed -i -E \
+        's/^[[:space:]]*bind-address[[:space:]]*=.*/bind-address = 0.0.0.0/' \
+        "${MARIADB_CONFIG}"
+
+elif grep -Eq '^[[:space:]]*#?[[:space:]]*bind-address[[:space:]]*=' "${MARIADB_CONFIG}"; then
+
+    sed -i -E \
+        's/^[[:space:]]*#?[[:space:]]*bind-address[[:space:]]*=.*/bind-address = 0.0.0.0/' \
+        "${MARIADB_CONFIG}"
+
+else
+
+    cat >> "${MARIADB_CONFIG}" <<'EOF'
+
+# ============================================================
+# docker-php
+# MariaDB network configuration
+# ============================================================
+
+bind-address = 0.0.0.0
+EOF
+
+fi
+
+success "MariaDB bind-address diset ke 0.0.0.0."
+
+# ------------------------------------------------------------
+# Validate MariaDB Configuration
+# ------------------------------------------------------------
+
+info "Validating konfigurasi MariaDB..."
+
+if mariadbd --help --verbose >/dev/null 2>&1; then
+    success "Konfigurasi MariaDB valid."
+elif mysqld --help --verbose >/dev/null 2>&1; then
+    success "Konfigurasi MariaDB valid."
+else
+    error "Konfigurasi MariaDB gagal divalidasi."
+    exit 1
+fi
+
+# ------------------------------------------------------------
+# Restart MariaDB
+# ------------------------------------------------------------
+
+info "Restarting MariaDB..."
+
+systemctl restart mariadb
+
+if systemctl is-active --quiet mariadb; then
+    success "MariaDB berhasil direstart."
+else
+    error "MariaDB gagal berjalan setelah restart."
+    systemctl status mariadb --no-pager || true
+    exit 1
+fi
+
+# ------------------------------------------------------------
+# Verify MariaDB bind-address
+# ------------------------------------------------------------
+
+info "Memeriksa bind-address MariaDB..."
+
+MARIADB_BIND_ADDRESS="$(
+    mariadb -N -B \
+        -e "SHOW VARIABLES LIKE 'bind_address';" \
+        2>/dev/null \
+        | awk '{print $2}'
+)"
+
+if [[ "${MARIADB_BIND_ADDRESS}" == "0.0.0.0" ]]; then
+
+    success "MariaDB menerima koneksi pada 0.0.0.0."
+
+else
+
+    error "MariaDB bind-address bukan 0.0.0.0."
+    error "Current value: ${MARIADB_BIND_ADDRESS:-unknown}"
+    exit 1
 
 fi
 
 # ------------------------------------------------------------
-# MARIADB SOCKET
+# MARIADB ROOT SECURITY
 # ------------------------------------------------------------
+
+section "MARIADB ROOT SECURITY"
+
+info "Memeriksa account root MariaDB..."
+
+ROOT_ACCOUNTS="$(
+    mariadb -N -B \
+        -e "SELECT User, Host FROM mysql.user WHERE User='root' ORDER BY Host;" \
+        2>/dev/null || true
+)"
+
+echo
+echo "Root accounts:"
+echo "${ROOT_ACCOUNTS:-Tidak ditemukan}"
+echo
+
+REMOTE_ROOT_ACCOUNTS="$(
+    mariadb -N -B \
+        -e "
+            SELECT CONCAT(User, '@', Host)
+            FROM mysql.user
+            WHERE User = 'root'
+              AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+        " \
+        2>/dev/null || true
+)"
+
+if [[ -n "${REMOTE_ROOT_ACCOUNTS}" ]]; then
+
+    error "Ditemukan account root yang dapat digunakan dari luar localhost:"
+    echo "${REMOTE_ROOT_ACCOUNTS}"
+    echo
+
+    error "Script tidak menghapus account root remote secara otomatis."
+    error "Periksa account tersebut secara manual sebelum menghapus atau mengubahnya."
+    exit 1
+
+fi
+
+success "Root hanya menerima koneksi dari localhost."
+
+# ------------------------------------------------------------
+# ROOT PASSWORD WARNING
+# ------------------------------------------------------------
+
+echo
+
+warning "PERINGATAN PASSWORD ROOT"
+warning "Script ini TIDAK mengatur password root MariaDB."
+warning "Password root dibiarkan sesuai kondisi instalasi/server."
+warning "Jangan membuat root@'%' atau account root remote."
+warning "Untuk keamanan, root sebaiknya digunakan hanya dari localhost."
+warning "Jika root menggunakan authentication socket, pertahankan konfigurasi tersebut."
+
+echo
+
+# ------------------------------------------------------------
+# MARIADB SOCKET / PING
+# ------------------------------------------------------------
+
+section "MARIADB CONNECTION TEST"
 
 if systemctl is-active --quiet mariadb; then
 
     if mariadb-admin ping >/dev/null 2>&1; then
         success "MariaDB menerima koneksi."
     else
-        warning "MariaDB service running tetapi mariadb-admin ping gagal."
+        error "MariaDB service running tetapi mariadb-admin ping gagal."
+        exit 1
+    fi
+
+else
+
+    error "MariaDB tidak sedang running."
+    exit 1
+
+fi
+
+# ------------------------------------------------------------
+# MARIADB LISTENING SOCKET
+# ------------------------------------------------------------
+
+info "Memeriksa MariaDB listener TCP/3306..."
+
+if command -v ss >/dev/null 2>&1; then
+
+    if ss -lntp | grep -q ':3306'; then
+        ss -lntp | grep ':3306'
+        success "MariaDB listener TCP/3306 ditemukan."
+    else
+        warning "Listener TCP/3306 belum ditemukan."
     fi
 
 fi
@@ -527,6 +736,22 @@ else
     echo -e "${RED}FAILED${NC}"
 fi
 
+printf "%-20s : " "MariaDB Bind"
+
+if [[ "${MARIADB_BIND_ADDRESS:-}" == "0.0.0.0" ]]; then
+    echo -e "${GREEN}0.0.0.0${NC}"
+else
+    echo -e "${RED}${MARIADB_BIND_ADDRESS:-UNKNOWN}${NC}"
+fi
+
+printf "%-20s : " "MariaDB Root"
+
+if [[ -z "${REMOTE_ROOT_ACCOUNTS:-}" ]]; then
+    echo -e "${GREEN}LOCALHOST ONLY${NC}"
+else
+    echo -e "${RED}REMOTE ACCESS${NC}"
+fi
+
 # ------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------
@@ -551,20 +776,28 @@ docker compose version || true
 
 echo
 echo "MariaDB:"
-mariadb --version 2>/dev/null || mysql --version 2>/dev/null || true
+mariadb --version || true
 
 echo
 
 success "Pemeriksaan dependency selesai."
 
 echo
+echo "MariaDB configuration:"
+echo "  Bind Address : ${MARIADB_BIND_ADDRESS}"
+echo "  Root Access  : localhost only"
+echo "  Root Password: tidak diubah oleh script"
+echo
+
 echo "Environment siap digunakan untuk repository docker-php."
+
 echo
 echo "Repository:"
 echo "  /opt/docker-php"
+
 echo
 echo "Langkah berikutnya:"
 echo
 echo "  cd /opt/docker-php"
-echo "  ./scripts/build-all.sh"
+echo "  ./scripts/build-image.sh"
 echo
