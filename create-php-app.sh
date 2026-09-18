@@ -487,18 +487,11 @@ log "Generate password database..."
 
 if command -v openssl >/dev/null 2>&1; then
 
-    DB_PASSWORD="$(
-        openssl rand -base64 48 \
-        | tr -dc 'A-Za-z0-9_@%+=-' \
-        | head -c 32
-    )
+    DB_PASSWORD="$(openssl rand -hex 24)"
 
 else
 
-    DB_PASSWORD="$(
-        tr -dc 'A-Za-z0-9_@%+=-' < /dev/urandom \
-        | head -c 32
-    )
+    DB_PASSWORD="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
 
 fi
 
