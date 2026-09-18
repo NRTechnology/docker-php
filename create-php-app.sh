@@ -198,6 +198,8 @@ APP_HTDOCS="${APP_ROOT}/htdocs"
 APP_WRITABLE="${APP_ROOT}/data/writable"
 APP_LOGS="${APP_ROOT}/logs"
 APP_BACKUP="${APP_ROOT}/backup"
+APP_COMPOSER="${APP_ROOT}/composer"
+APP_VENDOR="${APP_ROOT}/vendor"
 
 DOCKER_APP_ROOT="${DOCKER_APPS_DIR}/${APP_NAME}"
 
@@ -244,6 +246,13 @@ done
 
 docker image inspect "$IMAGE_NAME" >/dev/null 2>&1 \
     || die "Image tidak ditemukan: $IMAGE_NAME"
+
+if [[ "$FRAMEWORK" == "laravel" ]]; then
+    docker image inspect "composer:2" >/dev/null 2>&1 || {
+        log "Image composer:2 tidak ditemukan. Pulling composer:2..."
+        docker pull composer:2 >/dev/null             || die "Gagal pull image composer:2."
+    }
+fi
 
 if [[ "$PHP_VERSION" == "7.4" ]]; then
     warn "PHP 7.4 adalah versi legacy/EOL."
@@ -319,6 +328,10 @@ mkdir -p \
     "$DOCKER_APP_ROOT" \
     "$PHP_RUN_DIR"
 
+if [[ "$FRAMEWORK" == "laravel" ]]; then
+    mkdir -p         "$APP_COMPOSER"         "$APP_VENDOR"
+fi
+
 for dir in $WRITABLE_DIRS; do
     mkdir -p "${APP_WRITABLE}/${dir}"
 done
@@ -363,6 +376,42 @@ chmod 0750 "$APP_BACKUP"
 # PHP-FPM socket directory
 chown root:www-data "$PHP_RUN_DIR"
 chmod 0775 "$PHP_RUN_DIR"
+
+# Composer binary
+if [[ "$FRAMEWORK" == "laravel" ]]; then
+    log "Menyiapkan Composer..."
+
+    COMPOSER_TEMP_CONTAINER="${APP_NAME}-composer-bootstrap"
+
+    # Bersihkan temporary container jika proses bootstrap gagal.
+    cleanup_composer_container() {
+        docker rm -f "$COMPOSER_TEMP_CONTAINER" >/dev/null 2>&1 || true
+    }
+    trap cleanup_composer_container EXIT
+
+    # Pastikan container bootstrap tidak tertinggal dari proses sebelumnya.
+    docker rm -f "$COMPOSER_TEMP_CONTAINER" >/dev/null 2>&1 || true
+
+    docker create         --name "$COMPOSER_TEMP_CONTAINER"         composer:2 >/dev/null         || die "Gagal membuat temporary Composer container."
+
+    if ! docker cp         "${COMPOSER_TEMP_CONTAINER}:/usr/bin/composer"         "${APP_COMPOSER}/composer"; then
+        docker rm -f "$COMPOSER_TEMP_CONTAINER" >/dev/null 2>&1 || true
+        die "Gagal mengambil Composer binary dari composer:2."
+    fi
+
+    docker rm -f "$COMPOSER_TEMP_CONTAINER" >/dev/null 2>&1 || true
+    trap - EXIT
+
+    chown root:root "${APP_COMPOSER}/composer"
+    chmod 0755 "${APP_COMPOSER}/composer"
+
+    chown -R root:root "$APP_VENDOR"
+    find "$APP_VENDOR" -type d -exec chmod 0755 {} \;
+    find "$APP_VENDOR" -type f -exec chmod 0644 {} \;
+
+    log "Composer tersedia: ${APP_COMPOSER}/composer"
+    log "Laravel vendor directory: ${APP_VENDOR}"
+fi
 
 
 # ==============================================================================
@@ -641,6 +690,11 @@ services:
       # Application source code - READ ONLY
       - ${APP_HTDOCS}:/var/www/html:ro
 
+$(if [[ "$FRAMEWORK" == "laravel" ]]; then
+    printf '      # Composer binary - READ ONLY\n      - %s/composer:/usr/local/bin/composer:ro\n' "${APP_COMPOSER}"
+    printf '      # Laravel dependencies - WRITABLE\n      - %s:/var/www/html/vendor:rw\n' "${APP_VENDOR}"
+fi)
+
 ${WRITABLE_MOUNTS}
 
       # PHP-FPM Unix socket
@@ -860,6 +914,10 @@ Source      : ${APP_HTDOCS}
 Writable    : ${APP_WRITABLE}
 Logs        : ${APP_LOGS}
 Backup      : ${APP_BACKUP}
+$(if [[ "$FRAMEWORK" == "laravel" ]]; then
+    printf 'Composer    : %s/composer\n' "${APP_COMPOSER}"
+    printf 'Vendor      : %s\n' "${APP_VENDOR}"
+fi)
 
 ============================================================
 Docker
@@ -915,7 +973,18 @@ Next Steps
 3. Configure Laravel .env / application configuration
    menggunakan database credentials tersebut.
 
-4. Install application dependencies separately.
+4. Untuk Laravel, Composer tersedia di:
+   ${APP_COMPOSER}/composer
+
+   Composer di-mount read-only ke:
+   /usr/local/bin/composer
+
+   Laravel vendor di-mount terpisah sebagai writable volume:
+   ${APP_VENDOR} -> /var/www/html/vendor
+
+   Install dependency dari container PHP:
+   docker exec -it ${CONTAINER_NAME} composer install --no-dev --prefer-dist --optimize-autoloader
+
    Composer TIDAK termasuk dalam PHP-FPM runtime image.
 
 5. Check Docker Compose:
