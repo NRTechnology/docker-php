@@ -199,7 +199,6 @@ APP_WRITABLE="${APP_ROOT}/data/writable"
 APP_LOGS="${APP_ROOT}/logs"
 APP_BACKUP="${APP_ROOT}/backup"
 APP_COMPOSER="${APP_ROOT}/composer"
-APP_VENDOR="${APP_ROOT}/vendor"
 
 DOCKER_APP_ROOT="${DOCKER_APPS_DIR}/${APP_NAME}"
 
@@ -270,10 +269,12 @@ case "$FRAMEWORK" in
         DOCUMENT_ROOT="/var/apps/${APP_NAME}/htdocs/public"
 
         WRITABLE_MOUNTS="\
-      - ${APP_WRITABLE}/storage:/var/www/html/storage:rw
-      - ${APP_WRITABLE}/bootstrap-cache:/var/www/html/bootstrap/cache:rw"
+      - ${APP_ROOT}/data/storage-app:/var/www/html/storage/app:rw
+      - ${APP_ROOT}/data/storage-framework:/var/www/html/storage/framework:rw
+      - ${APP_ROOT}/data/storage-logs:/var/www/html/storage/logs:rw
+      - ${APP_ROOT}/data/bootstrap-cache:/var/www/html/bootstrap/cache:rw"
 
-        WRITABLE_DIRS="storage bootstrap-cache"
+        WRITABLE_DIRS="storage-app storage-framework storage-logs bootstrap-cache"
 
         WRITABLE_DENY='    location ~ ^/(storage|bootstrap/cache)/.*\.php$ {
         deny all;
@@ -329,12 +330,14 @@ mkdir -p \
     "$PHP_RUN_DIR"
 
 if [[ "$FRAMEWORK" == "laravel" ]]; then
-    mkdir -p         "$APP_COMPOSER"         "$APP_VENDOR"
-fi
+    mkdir -p "$APP_COMPOSER"
 
-for dir in $WRITABLE_DIRS; do
-    mkdir -p "${APP_WRITABLE}/${dir}"
-done
+    mkdir -p         "${APP_ROOT}/data/storage-app"         "${APP_ROOT}/data/storage-framework"         "${APP_ROOT}/data/storage-logs"         "${APP_ROOT}/data/bootstrap-cache"
+else
+    for dir in $WRITABLE_DIRS; do
+        mkdir -p "${APP_WRITABLE}/${dir}"
+    done
+fi
 
 
 # ==============================================================================
@@ -348,15 +351,19 @@ chown root:root "$APP_HTDOCS"
 chmod 0755 "$APP_HTDOCS"
 
 # Writable runtime
-chown -R www-data:www-data "$APP_WRITABLE"
+if [[ "$FRAMEWORK" == "laravel" ]]; then
+    chown -R www-data:www-data "${APP_ROOT}/data"
 
-find "$APP_WRITABLE" \
-    -type d \
-    -exec chmod 0750 {} \;
+    find "${APP_ROOT}/data"         -type d         -exec chmod 0750 {} \;
 
-find "$APP_WRITABLE" \
-    -type f \
-    -exec chmod 0640 {} \;
+    find "${APP_ROOT}/data"         -type f         -exec chmod 0640 {} \;
+else
+    chown -R www-data:www-data "$APP_WRITABLE"
+
+    find "$APP_WRITABLE"         -type d         -exec chmod 0750 {} \;
+
+    find "$APP_WRITABLE"         -type f         -exec chmod 0640 {} \;
+fi
 
 # Application logs
 chown -R www-data:www-data "$APP_LOGS"
@@ -405,12 +412,7 @@ if [[ "$FRAMEWORK" == "laravel" ]]; then
     chown root:root "${APP_COMPOSER}/composer"
     chmod 0755 "${APP_COMPOSER}/composer"
 
-    chown -R root:root "$APP_VENDOR"
-    find "$APP_VENDOR" -type d -exec chmod 0755 {} \;
-    find "$APP_VENDOR" -type f -exec chmod 0644 {} \;
-
     log "Composer tersedia: ${APP_COMPOSER}/composer"
-    log "Laravel vendor directory: ${APP_VENDOR}"
 fi
 
 
@@ -692,7 +694,6 @@ services:
 
 $(if [[ "$FRAMEWORK" == "laravel" ]]; then
     printf '      # Composer binary - READ ONLY\n      - %s/composer:/usr/local/bin/composer:ro\n' "${APP_COMPOSER}"
-    printf '      # Laravel dependencies - WRITABLE\n      - %s:/var/www/html/vendor:rw\n' "${APP_VENDOR}"
 fi)
 
 ${WRITABLE_MOUNTS}
@@ -911,12 +912,17 @@ Application Directory
 ============================================================
 
 Source      : ${APP_HTDOCS}
-Writable    : ${APP_WRITABLE}
+$(if [[ "$FRAMEWORK" == "laravel" ]]; then
+    printf 'Writable    : %s/data
+' "${APP_ROOT}"
+else
+    printf 'Writable    : %s
+' "${APP_WRITABLE}"
+fi)
 Logs        : ${APP_LOGS}
 Backup      : ${APP_BACKUP}
 $(if [[ "$FRAMEWORK" == "laravel" ]]; then
     printf 'Composer    : %s/composer\n' "${APP_COMPOSER}"
-    printf 'Vendor      : %s\n' "${APP_VENDOR}"
 fi)
 
 ============================================================
@@ -979,8 +985,6 @@ Next Steps
    Composer di-mount read-only ke:
    /usr/local/bin/composer
 
-   Laravel vendor di-mount terpisah sebagai writable volume:
-   ${APP_VENDOR} -> /var/www/html/vendor
 
    Install dependency dari container PHP:
    docker exec -it ${CONTAINER_NAME} composer install --no-dev --prefer-dist --optimize-autoloader
