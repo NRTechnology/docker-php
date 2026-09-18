@@ -4,11 +4,12 @@ set -Eeuo pipefail
 
 # ==============================================================================
 # build-image.sh
-#
 # Standard PHP-FPM Docker Image Builder
-#
+# ==============================================================================
+
 # Supported PHP versions:
 #   7.4
+#   8.2
 #   8.3
 #   8.4
 #   8.5
@@ -16,9 +17,9 @@ set -Eeuo pipefail
 # Usage:
 #   ./build-image.sh
 #   ./build-image.sh all
-#   ./build-image.sh 8.3
-#   ./build-image.sh 8.3 8.4
-#   ./build-image.sh 8.3 --no-cache
+#   ./build-image.sh 8.2
+#   ./build-image.sh 8.2 8.3
+#   ./build-image.sh 8.2 --no-cache
 #   ./build-image.sh all --no-cache
 #
 # ==============================================================================
@@ -31,6 +32,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 VERSIONS=(
     "7.4"
+    "8.2"
     "8.3"
     "8.4"
     "8.5"
@@ -100,6 +102,7 @@ Usage:
 
 Supported PHP versions:
   7.4
+  8.2
   8.3
   8.4
   8.5
@@ -112,11 +115,17 @@ Examples:
   Build semua image:
     $0 all
 
+  Build PHP 8.2:
+    $0 8.2
+
   Build PHP 8.3:
     $0 8.3
 
-  Build PHP 8.3 dan 8.4:
-    $0 8.3 8.4
+  Build PHP 8.2 dan 8.3:
+    $0 8.2 8.3
+
+  Build PHP 8.2 tanpa cache:
+    $0 8.2 --no-cache
 
   Build PHP 8.3 tanpa cache:
     $0 8.3 --no-cache
@@ -137,7 +146,7 @@ is_supported_version() {
     local version="$1"
 
     case "$version" in
-        7.4|8.3|8.4|8.5)
+        7.4|8.2|8.3|8.4|8.5)
             return 0
             ;;
         *)
@@ -174,7 +183,6 @@ check_requirements() {
 
     info "Repository root:"
     echo "  ${ROOT_DIR}"
-
 }
 
 
@@ -200,7 +208,6 @@ check_dockerfile() {
     if [[ ! -f "${image_dir}/php.ini" ]]; then
         warning "php.ini tidak ditemukan: ${image_dir}/php.ini"
     fi
-
 }
 
 
@@ -247,7 +254,6 @@ build_image() {
         error "Build image ${image_name} gagal."
         return 1
     fi
-
 }
 
 
@@ -270,6 +276,7 @@ verify_image() {
     success "Image tersedia."
 
     echo
+
     info "Image information:"
 
     docker image inspect "$image_name" \
@@ -279,6 +286,7 @@ verify_image() {
   OS          : {{.Os}}'
 
     echo
+
     info "PHP version:"
 
     docker run --rm \
@@ -286,6 +294,7 @@ verify_image() {
         php -v | head -n 1
 
     echo
+
     info "PHP-FPM configuration test:"
 
     docker run --rm \
@@ -293,7 +302,6 @@ verify_image() {
         php-fpm -t
 
     success "Image ${image_name} berhasil diverifikasi."
-
 }
 
 
@@ -307,7 +315,6 @@ show_images() {
 
     docker images local/php \
         --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}'
-
 }
 
 
@@ -328,15 +335,16 @@ interactive_menu() {
         echo "Pilih image yang ingin dibuild:"
         echo
         echo "  1) PHP 7.4"
-        echo "  2) PHP 8.3"
-        echo "  3) PHP 8.4"
-        echo "  4) PHP 8.5"
-        echo "  5) Semua versi"
-        echo "  6) Tampilkan image yang tersedia"
+        echo "  2) PHP 8.2"
+        echo "  3) PHP 8.3"
+        echo "  4) PHP 8.4"
+        echo "  5) PHP 8.5"
+        echo "  6) Semua versi"
+        echo "  7) Tampilkan image yang tersedia"
         echo "  0) Keluar"
 
         echo
-        read -r -p "Pilihan [0-6]: " choice
+        read -r -p "Pilihan [0-7]: " choice
 
         case "$choice" in
 
@@ -346,26 +354,31 @@ interactive_menu() {
                 ;;
 
             2)
-                SELECTED_VERSIONS=("8.3")
+                SELECTED_VERSIONS=("8.2")
                 break
                 ;;
 
             3)
-                SELECTED_VERSIONS=("8.4")
+                SELECTED_VERSIONS=("8.3")
                 break
                 ;;
 
             4)
-                SELECTED_VERSIONS=("8.5")
+                SELECTED_VERSIONS=("8.4")
                 break
                 ;;
 
             5)
-                SELECTED_VERSIONS=("${VERSIONS[@]}")
+                SELECTED_VERSIONS=("8.5")
                 break
                 ;;
 
             6)
+                SELECTED_VERSIONS=("${VERSIONS[@]}")
+                break
+                ;;
+
+            7)
                 show_images
                 echo
                 read -r -p "Tekan ENTER untuk kembali ke menu..."
@@ -384,7 +397,6 @@ interactive_menu() {
         esac
 
     done
-
 }
 
 
@@ -417,7 +429,7 @@ else
                 SELECTED_VERSIONS=("${VERSIONS[@]}")
                 ;;
 
-            7.4|8.3|8.4|8.5)
+            7.4|8.2|8.3|8.4|8.5)
                 SELECTED_VERSIONS+=("$arg")
                 ;;
 
@@ -452,7 +464,7 @@ fi
 
 
 # ==============================================================================
-# PHP 7.4 WARNING
+# PHP VERSION WARNINGS
 # ==============================================================================
 
 for version in "${SELECTED_VERSIONS[@]}"; do
@@ -542,6 +554,7 @@ fi
 if [[ ${#FAILED_VERSIONS[@]} -gt 0 ]]; then
 
     echo
+
     error "Build gagal:"
 
     for version in "${FAILED_VERSIONS[@]}"; do
@@ -552,7 +565,7 @@ fi
 
 echo
 
-show_images 
+show_images
 
 echo
 

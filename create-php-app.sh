@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 set -Eeuo pipefail
 
 # ==============================================================================
@@ -12,18 +13,25 @@ NGINX_AVAILABLE="/etc/nginx/sites-available"
 NGINX_ENABLED="/etc/nginx/sites-enabled"
 PHP_RUN_DIR="/run/php"
 
+
+# ==============================================================================
+# USAGE
+# ==============================================================================
+
 usage() {
     cat <<USAGE
+
 Usage:
   $0 <app-name> <php-version> <framework> <domain-name>
 
 PHP versions:
-  7.4 | 8.3 | 8.4 | 8.5
+  7.4 | 8.2 | 8.3 | 8.4 | 8.5
 
 Frameworks:
   laravel | ci | generic
 
 Examples:
+  $0 myapp 8.2 laravel myapp.example.go.id
   $0 myapp 8.3 laravel myapp.example.go.id
   $0 myapp2 8.4 ci myapp2.example.go.id
   $0 myapp3 8.5 generic myapp3.example.go.id
@@ -34,9 +42,24 @@ Description:
   php-version   Versi PHP-FPM yang digunakan.
   framework     Framework aplikasi.
   domain-name   Domain yang digunakan oleh Nginx.
+
+Database:
+  Script mendukung MySQL maupun MariaDB.
+  Client yang tersedia digunakan secara otomatis:
+    mariadb
+    mysql
+
+  Driver aplikasi tetap:
+    DB_CONNECTION=mysql
+
 USAGE
     exit 1
 }
+
+
+# ==============================================================================
+# LOGGING
+# ==============================================================================
 
 log() {
     echo "[INFO] $*"
@@ -51,6 +74,11 @@ die() {
     exit 1
 }
 
+
+# ==============================================================================
+# ARGUMENTS
+# ==============================================================================
+
 [[ $# -eq 4 ]] || usage
 
 APP_NAME="$1"
@@ -59,6 +87,7 @@ FRAMEWORK="$3"
 DOMAIN_NAME="$4"
 
 [[ "$EUID" -eq 0 ]] || die "Script harus dijalankan sebagai root."
+
 
 # ==============================================================================
 # VALIDATE APPLICATION NAME
@@ -103,7 +132,7 @@ DOMAIN_NAME="$(printf '%s' "$DOMAIN_NAME" | tr '[:upper:]' '[:lower:]')"
 # ==============================================================================
 
 case "$PHP_VERSION" in
-    7.4|8.3|8.4|8.5)
+    7.4|8.2|8.3|8.4|8.5)
         ;;
     *)
         die "PHP version tidak didukung: $PHP_VERSION"
@@ -137,8 +166,27 @@ command -v nginx >/dev/null 2>&1 \
 docker compose version >/dev/null 2>&1 \
     || die "Docker Compose plugin tidak ditemukan."
 
-command -v mysql >/dev/null 2>&1 \
-    || die "MySQL/MariaDB client tidak ditemukan."
+
+# ==============================================================================
+# DATABASE CLIENT DETECTION
+# ==============================================================================
+
+DATABASE_CLIENT=""
+
+if command -v mariadb >/dev/null 2>&1; then
+
+    DATABASE_CLIENT="mariadb"
+
+elif command -v mysql >/dev/null 2>&1; then
+
+    DATABASE_CLIENT="mysql"
+
+else
+
+    die "Database client tidak ditemukan. Install mariadb-client atau mysql-client."
+fi
+
+log "Database client : ${DATABASE_CLIENT}"
 
 
 # ==============================================================================
@@ -164,6 +212,7 @@ SOCKET_PATH="${PHP_RUN_DIR}/${APP_NAME}.sock"
 IMAGE_NAME="local/php:${PHP_VERSION}"
 NETWORK_NAME="${APP_NAME}-network"
 CONTAINER_NAME="${APP_NAME}-php"
+
 
 # ==============================================================================
 # DATABASE SETTINGS
@@ -333,6 +382,11 @@ docker network create \
 
 log "Docker network berhasil dibuat: $NETWORK_NAME"
 
+
+# ==============================================================================
+# GET ACTUAL DOCKER NETWORK INFORMATION
+# ==============================================================================
+
 # Ambil subnet aktual yang diberikan Docker.
 NETWORK_SUBNET="$(
     docker network inspect "$NETWORK_NAME" \
@@ -356,7 +410,7 @@ log "Docker gateway : $NETWORK_GATEWAY"
 
 
 # ==============================================================================
-# GENERATE MYSQL HOST PATTERN
+# GENERATE DATABASE HOST PATTERN
 # ==============================================================================
 
 NETWORK_CIDR="${NETWORK_SUBNET#*/}"
@@ -367,36 +421,36 @@ IFS='.' read -r OCT1 OCT2 OCT3 OCT4 <<< "$NETWORK_BASE"
 case "$NETWORK_CIDR" in
 
     8)
-        MYSQL_HOST_PATTERN="${OCT1}.%"
+        DB_HOST_PATTERN="${OCT1}.%"
         ;;
 
     16)
-        MYSQL_HOST_PATTERN="${OCT1}.${OCT2}.%"
+        DB_HOST_PATTERN="${OCT1}.${OCT2}.%"
         ;;
 
     24)
-        MYSQL_HOST_PATTERN="${OCT1}.${OCT2}.${OCT3}.%"
+        DB_HOST_PATTERN="${OCT1}.${OCT2}.${OCT3}.%"
         ;;
 
     *)
-        die "Subnet Docker tidak didukung untuk automatic MySQL host restriction: $NETWORK_SUBNET"
+        die "Subnet Docker tidak didukung untuk automatic database host restriction: ${NETWORK_SUBNET}"
         ;;
 
 esac
 
-log "MariaDB allowed host: ${MYSQL_HOST_PATTERN}"
+log "Database allowed host: ${DB_HOST_PATTERN}"
 
 
 # ==============================================================================
 # MYSQL / MARIADB DATABASE
 # ==============================================================================
 
-log "Memeriksa koneksi MySQL/MariaDB..."
+log "Memeriksa koneksi database..."
 
-mysql -e "SELECT 1;" >/dev/null 2>&1 \
+"${DATABASE_CLIENT}" -e "SELECT 1;" >/dev/null 2>&1 \
     || die "Tidak dapat terhubung ke MySQL/MariaDB menggunakan akun saat ini."
 
-log "Koneksi MySQL/MariaDB berhasil."
+log "Koneksi database berhasil."
 
 
 # ==============================================================================
@@ -404,7 +458,7 @@ log "Koneksi MySQL/MariaDB berhasil."
 # ==============================================================================
 
 DB_EXISTS="$(
-    mysql -Nse \
+    "${DATABASE_CLIENT}" -Nse \
         "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='${DB_NAME}';"
 )"
 
@@ -413,62 +467,62 @@ DB_EXISTS="$(
 
 
 # ==============================================================================
-# CHECK EXISTING MYSQL USER
+# CHECK EXISTING DATABASE USER
 # ==============================================================================
 
-MYSQL_USER_EXISTS="$(
-    mysql -Nse \
-        "SELECT COUNT(*) FROM mysql.user WHERE User='${DB_USER}' AND Host='${MYSQL_HOST_PATTERN}';"
+DB_USER_EXISTS="$(
+    "${DATABASE_CLIENT}" -Nse \
+        "SELECT COUNT(*) FROM mysql.user WHERE User='${DB_USER}' AND Host='${DB_HOST_PATTERN}';"
 )"
 
-[[ "$MYSQL_USER_EXISTS" == "0" ]] \
-    || die "MySQL user sudah ada: '${DB_USER}'@'${MYSQL_HOST_PATTERN}'"
+[[ "$DB_USER_EXISTS" == "0" ]] \
+    || die "Database user sudah ada: '${DB_USER}'@'${DB_HOST_PATTERN}'"
 
 
 # ==============================================================================
-# GENERATE MYSQL PASSWORD
+# GENERATE DATABASE PASSWORD
 # ==============================================================================
 
 log "Generate password database..."
 
 if command -v openssl >/dev/null 2>&1; then
 
-    MYSQL_PASSWORD="$(
+    DB_PASSWORD="$(
         openssl rand -base64 48 \
         | tr -dc 'A-Za-z0-9_@%+=-' \
         | head -c 32
-    )"
+    )
 
 else
 
-    MYSQL_PASSWORD="$(
+    DB_PASSWORD="$(
         tr -dc 'A-Za-z0-9_@%+=-' < /dev/urandom \
         | head -c 32
-    )"
+    )
 
 fi
 
-[[ ${#MYSQL_PASSWORD} -ge 24 ]] \
+[[ ${#DB_PASSWORD} -ge 24 ]] \
     || die "Gagal membuat password database yang cukup kuat."
 
 
 # ==============================================================================
-# ESCAPE MYSQL PASSWORD
+# ESCAPE DATABASE PASSWORD
 # ==============================================================================
 
-MYSQL_PASSWORD_SQL="$(
-    printf '%s' "$MYSQL_PASSWORD" \
+DB_PASSWORD_SQL="$(
+    printf '%s' "$DB_PASSWORD" \
     | sed "s/'/''/g"
 )"
 
 
 # ==============================================================================
-# CREATE MYSQL DATABASE
+# CREATE DATABASE
 # ==============================================================================
 
 log "Membuat database: ${DB_NAME}..."
 
-mysql <<SQL
+"${DATABASE_CLIENT}" <<SQL
 CREATE DATABASE \`${DB_NAME}\`
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
@@ -478,25 +532,25 @@ log "Database berhasil dibuat: ${DB_NAME}"
 
 
 # ==============================================================================
-# CREATE MYSQL USER
+# CREATE DATABASE USER
 # ==============================================================================
 
-log "Membuat MySQL user..."
+log "Membuat database user..."
 
-mysql <<SQL
-CREATE USER '${DB_USER}'@'${MYSQL_HOST_PATTERN}'
-    IDENTIFIED BY '${MYSQL_PASSWORD_SQL}';
+"${DATABASE_CLIENT}" <<SQL
+CREATE USER '${DB_USER}'@'${DB_HOST_PATTERN}'
+    IDENTIFIED BY '${DB_PASSWORD_SQL}';
 
 GRANT ALL PRIVILEGES
     ON \`${DB_NAME}\`.*
-    TO '${DB_USER}'@'${MYSQL_HOST_PATTERN}';
+    TO '${DB_USER}'@'${DB_HOST_PATTERN}';
 
 FLUSH PRIVILEGES;
 SQL
 
-log "MySQL user berhasil dibuat:"
+log "Database user berhasil dibuat:"
 log "  User : ${DB_USER}"
-log "  Host : ${MYSQL_HOST_PATTERN}"
+log "  Host : ${DB_HOST_PATTERN}"
 
 
 # ==============================================================================
@@ -509,12 +563,13 @@ cat > "$DB_CREDENTIALS_FILE" <<EOF
 # Database credentials generated by create-php-app.sh
 # Application: ${APP_NAME}
 
+# Compatible with MySQL and MariaDB
 DB_CONNECTION=mysql
 DB_HOST=${NETWORK_GATEWAY}
 DB_PORT=3306
 DB_DATABASE=${DB_NAME}
 DB_USERNAME=${DB_USER}
-DB_PASSWORD=${MYSQL_PASSWORD}
+DB_PASSWORD=${DB_PASSWORD}
 EOF
 
 chown root:root "$DB_CREDENTIALS_FILE"
@@ -830,11 +885,12 @@ Image       : ${IMAGE_NAME}
 Database
 ============================================================
 
+Client      : ${DATABASE_CLIENT}
 Database    : ${DB_NAME}
 Username    : ${DB_USER}
 Host        : ${NETWORK_GATEWAY}
 Port        : 3306
-Allowed     : ${MYSQL_HOST_PATTERN}
+Allowed     : ${DB_HOST_PATTERN}
 Credentials : ${DB_CREDENTIALS_FILE}
 
 ============================================================
