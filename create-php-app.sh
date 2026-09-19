@@ -199,6 +199,11 @@ APP_WRITABLE="${APP_ROOT}/data/writable"
 APP_LOGS="${APP_ROOT}/logs"
 APP_BACKUP="${APP_ROOT}/backup"
 APP_COMPOSER="${APP_ROOT}/composer"
+APP_VENDOR="${APP_ROOT}/data/vendor"
+APP_STORAGE_APP="${APP_ROOT}/data/storage-app"
+APP_STORAGE_FRAMEWORK="${APP_ROOT}/data/storage-framework"
+APP_STORAGE_LOGS="${APP_ROOT}/data/storage-logs"
+APP_BOOTSTRAP_CACHE="${APP_ROOT}/data/bootstrap-cache"
 
 DOCKER_APP_ROOT="${DOCKER_APPS_DIR}/${APP_NAME}"
 
@@ -267,14 +272,16 @@ case "$FRAMEWORK" in
     laravel)
 
         DOCUMENT_ROOT="/var/apps/${APP_NAME}/htdocs/public"
+        PHP_ROOT="/public"
 
         WRITABLE_MOUNTS="\
-      - ${APP_ROOT}/data/storage-app:/var/www/html/storage/app:rw
-      - ${APP_ROOT}/data/storage-framework:/var/www/html/storage/framework:rw
-      - ${APP_ROOT}/data/storage-logs:/var/www/html/storage/logs:rw
-      - ${APP_ROOT}/data/bootstrap-cache:/var/www/html/bootstrap/cache:rw"
+      - ${APP_ROOT}/data/vendor:/var/www/html/vendor:rw
+      - ${APP_STORAGE_APP}:/var/www/html/storage/app:rw
+      - ${APP_STORAGE_FRAMEWORK}:/var/www/html/storage/framework:rw
+      - ${APP_STORAGE_LOGS}:/var/www/html/storage/logs:rw
+      - ${APP_BOOTSTRAP_CACHE}:/var/www/html/bootstrap/cache:rw"
 
-        WRITABLE_DIRS="storage-app storage-framework storage-logs bootstrap-cache"
+        WRITABLE_DIRS="vendor storage-app storage-framework storage-logs bootstrap-cache"
 
         WRITABLE_DENY='    location ~ ^/(storage|bootstrap/cache)/.*\.php$ {
         deny all;
@@ -285,6 +292,7 @@ case "$FRAMEWORK" in
     ci)
 
         DOCUMENT_ROOT="/var/apps/${APP_NAME}/htdocs/public"
+        PHP_ROOT="/public"
 
         WRITABLE_MOUNTS="\
       - ${APP_WRITABLE}:/var/www/html/writable:rw"
@@ -300,6 +308,7 @@ case "$FRAMEWORK" in
     generic)
 
         DOCUMENT_ROOT="/var/apps/${APP_NAME}/htdocs"
+        PHP_ROOT=""
 
         WRITABLE_MOUNTS="\
       - ${APP_WRITABLE}:/var/www/html/data:rw"
@@ -330,9 +339,18 @@ mkdir -p \
     "$PHP_RUN_DIR"
 
 if [[ "$FRAMEWORK" == "laravel" ]]; then
-    mkdir -p "$APP_COMPOSER"
+    mkdir -p \
+        "$APP_COMPOSER" \
+        "$APP_HTDOCS/public" \
+        "$APP_VENDOR" \
+        "$APP_STORAGE_APP/public" \
+        "$APP_STORAGE_FRAMEWORK/views" \
+        "$APP_STORAGE_LOGS" \
+        "$APP_BOOTSTRAP_CACHE" \
+        "$APP_HTDOCS/vendor"
 
-    mkdir -p         "${APP_ROOT}/data/storage-app"         "${APP_ROOT}/data/storage-framework"         "${APP_ROOT}/data/storage-logs"         "${APP_ROOT}/data/bootstrap-cache"
+    # Laravel public storage symlink.
+    ln -s ../storage/app/public "${APP_HTDOCS}/public/storage"
 else
     for dir in $WRITABLE_DIRS; do
         mkdir -p "${APP_WRITABLE}/${dir}"
@@ -790,8 +808,8 @@ server {
 
         include fastcgi_params;
 
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        fastcgi_param DOCUMENT_ROOT \$document_root;
+        fastcgi_param SCRIPT_FILENAME /var/www/html${PHP_ROOT}\$fastcgi_script_name;
+        fastcgi_param DOCUMENT_ROOT /var/www/html${PHP_ROOT};
 
         fastcgi_param HTTP_PROXY "";
 
@@ -915,6 +933,8 @@ Source      : ${APP_HTDOCS}
 $(if [[ "$FRAMEWORK" == "laravel" ]]; then
     printf 'Writable    : %s/data
 ' "${APP_ROOT}"
+    printf 'Vendor      : %s\n' "${APP_VENDOR}"
+    printf 'Storage App : %s\n' "${APP_STORAGE_APP}"
 else
     printf 'Writable    : %s
 ' "${APP_WRITABLE}"
@@ -987,7 +1007,15 @@ Next Steps
 
 
    Install dependency dari container PHP:
-   docker exec -it ${CONTAINER_NAME} composer install --no-dev --prefer-dist --optimize-autoloader
+   docker compose exec --user www-data php composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+   Composer binary: ${APP_COMPOSER}/composer
+   Vendor        : ${APP_VENDOR}
+   Mount vendor  : ${APP_VENDOR} -> /var/www/html/vendor
+
+   Laravel public storage:
+   ${APP_HTDOCS}/public/storage -> ../storage/app/public
+   ${APP_STORAGE_APP}/public -> /var/www/html/storage/app/public
 
    Composer TIDAK termasuk dalam PHP-FPM runtime image.
 
