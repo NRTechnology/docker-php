@@ -1,676 +1,666 @@
-**\*\*# Changelog\*\***
-
+# Changelog
 All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog]\\(https\\://keepachangelog.com/en/1.1.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
-and this project follows [Semantic Versioning]\\(https\\://semver.org/).
+and this project follows [Semantic Versioning](https://semver.org/).
 
-**\*\*## [1.1.0] - 2026-09-18\*\***
-
-**\*\*### Latest Updates (2026-09-19)\*\***
-
+## [1.1.0] - 2026-09-18
+### Latest Updates (2026-09-19)
 - Added database preflight before creating deployment resources.
+
 - Added verification that MySQL/MariaDB root can log in without a password.
+
 - Added detection of existing application databases before deployment.
+
 - Added detection of existing database users across all `Host` entries.
+
 - Deployment now stops on database/user conflicts before creating the Docker network, application directories, or Composer resources.
+
 - Existing database and database user are not modified or deleted automatically.
+
 - Docker network creation remains per application and stops if the requested network already exists.
+
 - Laravel `vendor` dependencies are separated into the writable `/var/apps/<application-name>/data/vendor` directory.
+
 - Laravel runtime storage is separated into dedicated writable directories for `storage/app`, `storage/framework`, `storage/logs`, and `bootstrap/cache`.
+
 - Laravel Composer binary is prepared outside the PHP-FPM runtime image and mounted read-only.
+
 - Composer dependency installation is documented using the `www-data` user.
+
 - Laravel public storage symlink handling is standardized.
+
 - Nginx PHP-FPM `SCRIPT_FILENAME` uses the container filesystem path `/var/www/html/...` instead of the host filesystem path.
+
 - Added cleanup guidance for failed or partial application deployments.
 
-**\*\*### Added\*\***
+### Added
+- Added support for PHP 8.2.
 
-\\- Added support for PHP 8.2.
+- Standardized supported PHP versions:
 
-\\- Standardized supported PHP versions:
+- PHP 7.4
 
-  - PHP 7.4
+- PHP 8.2
 
-  - PHP 8.2
+- PHP 8.3
 
-  - PHP 8.3
+- PHP 8.4
 
-  - PHP 8.4
+- PHP 8.5
 
-  - PHP 8.5
+- Standardized PHP-FPM Docker image naming:
 
-\\- Standardized PHP-FPM Docker image naming:
+- `local/php:7.4`
 
-  - \\`local/php:7.4\\`
+- `local/php:8.2`
 
-  - \\`local/php:8.2\\`
+- `local/php:8.3`
 
-  - \\`local/php:8.3\\`
+- `local/php:8.4`
 
-  - \\`local/php:8.4\\`
+- `local/php:8.5`
 
-  - \\`local/php:8.5\\`
+- Added framework-aware application generation for:
 
-\\- Added framework-aware application generation for:
+- Laravel
 
-  - Laravel
+- CodeIgniter 4
 
-  - CodeIgniter 4
+- Generic PHP application
 
-  - Generic PHP application
+- Added domain name parameter to the application generator.
 
-\\- Added domain name parameter to the application generator.
+- Added automatic generation of Nginx virtual host configuration based on the application domain.
 
-\\- Added automatic generation of Nginx virtual host configuration based on the application domain.
+- Added automatic creation of application directories:
 
-\\- Added automatic creation of application directories:
+- `/opt/docker-apps/\<application-name>`
 
-  - \\`/opt/docker-apps/\\\<application-name>\\`
+- `/var/apps/\<application-name>`
 
-  - \\`/var/apps/\\\<application-name>\\`
+- Added automatic creation of:
 
-\\- Added automatic creation of:
+- application source directory
 
-  - application source directory
+- writable runtime directories
 
-  - writable runtime directories
+- application log directory
 
-  - application log directory
+- application backup directory
 
-  - application backup directory
+- PHP-FPM pool configuration
 
-  - PHP-FPM pool configuration
+- Docker Compose configuration
 
-  - Docker Compose configuration
+- Nginx virtual host configuration
 
-  - Nginx virtual host configuration
+### Database
+- Standardized ****\\*\\*\\\*\\\*MariaDB as the default database platform\\\*\\\*\\*\**\*** for production deployments.
 
-**\*\*### Database\*\***
+- Retained compatibility with ****\\*\\*\\\*\\\*MySQL\\\*\\\*\\*\**\***.
 
-\\- Standardized **\*\*\\\*\\\*MariaDB as the default database platform\\\*\\\*\*\*** for production deployments.
+- Added automatic database client detection:
 
-\\- Retained compatibility with **\*\*\\\*\\\*MySQL\\\*\\\*\*\***.
+- `mariadb` is preferred when available.
 
-\\- Added automatic database client detection:
+- `mysql` is used when the MariaDB client is not available.
 
-  - \\`mariadb\\` is preferred when available.
+- Added automatic database creation by `create-php-app.sh`.
 
-  - \\`mysql\\` is used when the MariaDB client is not available.
+- Added automatic database username creation.
 
-\\- Added automatic database creation by \\`create-php-app.sh\\`.
+- Added automatic secure database password generation.
 
-\\- Added automatic database username creation.
+- Added automatic database user privilege assignment limited to the application database.
 
-\\- Added automatic secure database password generation.
+- Added automatic database credentials file generation:
 
-\\- Added automatic database user privilege assignment limited to the application database.
+- `/opt/docker-apps/\<application-name>/db-credentials.env`
 
-\\- Added automatic database credentials file generation:
+- Database credentials file permissions are restricted to:
 
-  - \\`/opt/docker-apps/\\\<application-name>/db-credentials.env\\`
+- owner: `root`
 
-\\- Database credentials file permissions are restricted to:
+- permission: `0600`
 
-  - owner: \\`root\\`
+- Added automatic restriction of the database user's allowed host based on the actual Docker network subnet.
 
-  - permission: \\`0600\\`
+- Docker network information is detected dynamically instead of using a hard-coded IP range.
 
-\\- Added automatic restriction of the database user's allowed host based on the actual Docker network subnet.
+- Application database configuration uses:
 
-\\- Docker network information is detected dynamically instead of using a hard-coded IP range.
+- `DB\_CONNECTION=mysql`
 
-\\- Application database configuration uses:
+- `DB\_HOST=\<docker-gateway>`
 
-  - \\`DB\\\_CONNECTION=mysql\\`
+- `DB\_PORT=3306`
 
-  - \\`DB\\\_HOST=\\\<docker-gateway>\\`
+- `DB\_CONNECTION=mysql` is retained because the Laravel database driver name is `mysql` for both MySQL and MariaDB.
 
-  - \\`DB\\\_PORT=3306\\`
+### Requirement Installation
+- Added standardized requirement checking and installation through:
 
-\\- \\`DB\\\_CONNECTION=mysql\\` is retained because the Laravel database driver name is \\`mysql\\` for both MySQL and MariaDB.
+`scripts/check-requirements.sh`
 
-**\*\*### Requirement Installation\*\***
+- Added automatic detection and installation support for:
 
-\\- Added standardized requirement checking and installation through:
+- Nginx
 
-  \\`scripts/check-requirements.sh\\`
+- Docker Engine
 
-\\- Added automatic detection and installation support for:
+- Docker Compose Plugin
 
-  - Nginx
+- MariaDB Server
 
-  - Docker Engine
+- MariaDB Client
 
-  - Docker Compose Plugin
+- MariaDB is treated as the standard database server for a new deployment.
 
-  - MariaDB Server
+- Added validation of:
 
-  - MariaDB Client
+- Nginx installation
 
-\\- MariaDB is treated as the standard database server for a new deployment.
+- Docker installation
 
-\\- Added validation of:
+- Docker daemon
 
-  - Nginx installation
+- Docker Compose
 
-  - Docker installation
+- MariaDB service
 
-  - Docker daemon
+- MariaDB client
 
-  - Docker Compose
+- Added automatic service enablement and startup for required services.
 
-  - MariaDB service
+- Docker installation uses the official Docker APT repository where supported.
 
-  - MariaDB client
+- Existing Docker installations are not automatically replaced.
 
-\\- Added automatic service enablement and startup for required services.
+### Docker
+- Added standardized per-application Docker bridge networks.
 
-\\- Docker installation uses the official Docker APT repository where supported.
+- Application network names follow:
 
-\\- Existing Docker installations are not automatically replaced.
+`\<application-name>-network`
 
-**\*\*### Docker\*\***
+- Docker network configuration remains based on:
 
-\\- Added standardized per-application Docker bridge networks.
+`driver: bridge`
 
-\\- Application network names follow:
+- The application generator creates the Docker network before Docker Compose deployment.
 
-  \\`\\\<application-name>-network\\`
+- Docker subnet and gateway are detected dynamically after network creation.
 
-\\- Docker network configuration remains based on:
+- PHP-FPM containers use per-application Docker networks.
 
-  \\`driver: bridge\\`
+- PHP-FPM containers use:
 
-\\- The application generator creates the Docker network before Docker Compose deployment.
+- `read\_only: true`
 
-\\- Docker subnet and gateway are detected dynamically after network creation.
+- `no-new-privileges\\:true`
 
-\\- PHP-FPM containers use per-application Docker networks.
+- tmpfs for temporary runtime data
 
-\\- PHP-FPM containers use:
+- CPU limits
 
-  - \\`read\\\_only: true\\`
+- memory limits
 
-  - \\`no-new-privileges\\\:true\\`
+- PID limits
 
-  - tmpfs for temporary runtime data
+- file descriptor limits
 
-  - CPU limits
+- Application source code is mounted read-only.
 
-  - memory limits
+- Writable application directories are mounted separately.
 
-  - PID limits
+- PHP-FPM configuration is mounted separately as read-only.
 
-  - file descriptor limits
+- PHP-FPM Unix socket directory is mounted separately.
 
-\\- Application source code is mounted read-only.
+### PHP-FPM
+- Standardized PHP-FPM pool configuration for generated applications.
 
-\\- Writable application directories are mounted separately.
+- PHP-FPM communicates with Nginx using Unix sockets.
 
-\\- PHP-FPM configuration is mounted separately as read-only.
+- Socket naming convention:
 
-\\- PHP-FPM Unix socket directory is mounted separately.
+`/run/php/\<application-name>.sock`
 
-**\*\*### PHP-FPM\*\***
+- Standardized socket permissions:
 
-\\- Standardized PHP-FPM pool configuration for generated applications.
+- owner: `www-data`
 
-\\- PHP-FPM communicates with Nginx using Unix sockets.
+- group: `www-data`
 
-\\- Socket naming convention:
+- mode: `0660`
 
-  \\`/run/php/\\\<application-name>.sock\\`
+- Standardized PHP-FPM process management:
 
-\\- Standardized socket permissions:
+- dynamic process manager
 
-  - owner: \\`www-data\\`
+- configurable worker limits
 
-  - group: \\`www-data\\`
+- worker recycling using `pm.max\_requests`
 
-  - mode: \\`0660\\`
+- request termination timeout
 
-\\- Standardized PHP-FPM process management:
+- slow request logging
 
-  - dynamic process manager
+- worker output capture
 
-  - configurable worker limits
+### Framework Templates
+#### Laravel
+- Laravel document root:
 
-  - worker recycling using \\`pm.max\\\_requests\\`
+`/var/apps/\<application-name>/htdocs/public`
 
-  - request termination timeout
+- Writable Laravel directories:
 
-  - slow request logging
+- `/var/apps/\<application-name>/data/  - `/var/apps/\<application-name>/data/storage-app`
 
-  - worker output capture
+- `/var/apps/\<application-name>/data/storage-framework`
 
-**\*\*### Framework Templates\*\***
+- `/var/apps/\<application-name>/data/storage-logs`
 
-**\*\*#### Laravel\*\***
+- `/var/apps/\<application-name>/data/bootstrap-cache`
 
-\\- Laravel document root:
+- Container mount points:
 
-  \\`/var/apps/\\\<application-name>/htdocs/public\\`
+- `/var/www/html/storage/app`
 
-\\- Writable Laravel directories:
+- `/var/www/html/storage/framework`
 
-  - \\`/var/apps/\\\<application-name>/data/  - \\`/var/apps/\\\<application-name>/data/storage-app\\`
+- `/var/www/html/storage/logs`
 
-  - \\`/var/apps/\\\<application-name>/data/storage-framework\\`
+- `/var/www/html/bootstrap/cache`
 
-  - \\`/var/apps/\\\<application-name>/data/storage-logs\\`
+- Laravel application source code is mounted read-only.
 
-  - \\`/var/apps/\\\<application-name>/data/bootstrap-cache\\`
+- Laravel `vendor` dependencies are stored separately from the application source:
 
-\\- Container mount points:
+`/var/apps/\<application-name>/data/vendor`
 
-  - \\`/var/www/html/storage/app\\`
+- The `vendor` directory is mounted read-write to:
 
-  - \\`/var/www/html/storage/framework\\`
+`/var/www/html/vendor`
 
-  - \\`/var/www/html/storage/logs\\`
+- Composer is provided separately and is not included in the PHP-FPM runtime image.
 
-  - \\`/var/www/html/bootstrap/cache\\`
+- Composer is mounted read-only into the container.
 
-\\- Laravel application source code is mounted read-only.
+- PHP execution is blocked inside Laravel writable directories.
 
-\\- Laravel \\`vendor\\` dependencies are stored separately from the application source:
+#### CodeIgniter 4
+- CodeIgniter 4 document root:
 
-  \\`/var/apps/\\\<application-name>/data/vendor\\`
+`/var/apps/\<application-name>/htdocs/public`
 
-\\- The \\`vendor\\` directory is mounted read-write to:
+- CI4 writable directory:
 
-  \\`/var/www/html/vendor\\`
+`/var/apps/\<application-name>/data/writable`
 
-\\- Composer is provided separately and is not included in the PHP-FPM runtime image.
+- Standard writable subdirectories:
 
-\\- Composer is mounted read-only into the container.
+- `cache`
 
-\\- PHP execution is blocked inside Laravel writable directories.
+- `logs`
 
-**\*\*#### CodeIgniter 4\*\***
+- `session`
 
-\\- CodeIgniter 4 document root:
+- `uploads`
 
-  \\`/var/apps/\\\<application-name>/htdocs/public\\`
+- PHP execution is blocked inside the writable directory.
 
-\\- CI4 writable directory:
+#### Generic PHP
+- Generic PHP document root:
 
-  \\`/var/apps/\\\<application-name>/data/writable\\`
+`/var/apps/\<application-name>/htdocs`
 
-\\- Standard writable subdirectories:
+- Generic writable directory:
 
-  - \\`cache\\`
+`/var/apps/\<application-name>/data/writable`
 
-  - \\`logs\\`
+- Standard writable subdirectories:
 
-  - \\`session\\`
+- `cache`
 
-  - \\`uploads\\`
+- `logs`
 
-\\- PHP execution is blocked inside the writable directory.
+- `session`
 
-**\*\*#### Generic PHP\*\***
+- `uploads`
 
-\\- Generic PHP document root:
+- PHP execution is blocked inside the writable data directory.
 
-  \\`/var/apps/\\\<application-name>/htdocs\\`
+### Nginx
+- Added framework-aware Nginx document roots.
 
-\\- Generic writable directory:
+- Standardized PHP-FPM Unix socket integration.
 
-  \\`/var/apps/\\\<application-name>/data/writable\\`
+- Added `try\_files` handling for application routing.
 
-\\- Standard writable subdirectories:
+- Added security headers.
 
-  - \\`cache\\`
+- Added hidden-file protection.
 
-  - \\`logs\\`
+- Added protection against access to sensitive files.
 
-  - \\`session\\`
+- Protected file extensions include:
 
-  - \\`uploads\\`
+- `.env`
 
-\\- PHP execution is blocked inside the writable data directory.
+- `.ini`
 
-**\*\*### Nginx\*\***
+- `.log`
 
-\\- Added framework-aware Nginx document roots.
+- `.sql`
 
-\\- Standardized PHP-FPM Unix socket integration.
+- `.bak`
 
-\\- Added \\`try\\\_files\\` handling for application routing.
+- `.backup`
 
-\\- Added security headers.
+- `.old`
 
-\\- Added hidden-file protection.
+- `.orig`
 
-\\- Added protection against access to sensitive files.
+- `.save`
 
-\\- Protected file extensions include:
+- `.swp`
 
-  - \\`.env\\`
+- Added PHP execution restrictions for writable application directories.
 
-  - \\`.ini\\`
+- Added automatic Nginx configuration validation using:
 
-  - \\`.log\\`
+`nginx -t`
 
-  - \\`.sql\\`
+- Added automatic Nginx site enablement through:
 
-  - \\`.bak\\`
+`/etc/nginx/sites-enabled`
 
-  - \\`.backup\\`
+### Application Generator
+- Updated application generator usage to:
 
-  - \\`.old\\`
+`./create-php-app.sh \<app-name> \<php-version> \<framework> \<domain-name>`
 
-  - \\`.orig\\`
+- Supported framework values:
 
-  - \\`.save\\`
+- `laravel`
 
-  - \\`.swp\\`
+- `ci`
 
-\\- Added PHP execution restrictions for writable application directories.
+- `generic`
 
-\\- Added automatic Nginx configuration validation using:
+- Supported PHP versions:
 
-  \\`nginx -t\\`
+- `7.4`
 
-\\- Added automatic Nginx site enablement through:
+- `8.2`
 
-  \\`/etc/nginx/sites-enabled\\`
+- `8.3`
 
-**\*\*### Application Generator\*\***
+- `8.4`
 
-\\- Updated application generator usage to:
+- `8.5`
 
-  \\`./create-php-app.sh \\\<app-name> \\\<php-version> \\\<framework> \\\<domain-name>\\`
+- Example commands:
 
-\\- Supported framework values:
+`./create-php-app.sh myapp 8.2 laravel myapp.example.go.id`
 
-  - \\`laravel\\`
+`./create-php-app.sh myapp2 8.4 ci myapp2.example.go.id`
 
-  - \\`ci\\`
+`./create-php-app.sh myapp3 8.5 generic myapp3.example.go.id`
 
-  - \\`generic\\`
+`./create-php-app.sh legacy-app 7.4 generic legacy.example.go.id`
 
-\\- Supported PHP versions:
+- Added validation for:
 
-  - \\`7.4\\`
+- application name
 
-  - \\`8.2\\`
+- domain name
 
-  - \\`8.3\\`
+- PHP version
 
-  - \\`8.4\\`
+- framework
 
-  - \\`8.5\\`
+- required Docker components
 
-\\- Example commands:
+- PHP image availability
 
-  \\`./create-php-app.sh myapp 8.2 laravel myapp.example.go.id\\`
+- existing application targets
 
-  \\`./create-php-app.sh myapp2 8.4 ci myapp2.example.go.id\\`
+- database root passwordless login
 
-  \\`./create-php-app.sh myapp3 8.5 generic myapp3.example.go.id\\`
+- existing database
 
-  \\`./create-php-app.sh legacy-app 7.4 generic legacy.example.go.id\\`
+- existing database user across all Host entries
 
-\\- Added validation for:
+- Docker network availability
 
-  - application name
+- Added automatic Docker Compose configuration validation using:
 
-  - domain name
+`docker compose config`
 
-  - PHP version
+- The application generator does not automatically execute:
 
-  - framework
+`docker compose up -d`
 
-  - required Docker components
+This allows the administrator to review the generated configuration before starting the application.
 
-  - PHP image availability
+### Security
+- Application source code is mounted read-only into PHP-FPM containers.
 
-  - existing application targets
+- Writable application data is separated from application source code.
 
-  - database root passwordless login
+- Containers use `no-new-privileges`.
 
-  - existing database
+- Containers use a read-only root filesystem where practical.
 
-  - existing database user across all Host entries
+- Temporary files use dedicated tmpfs storage.
 
-  - Docker network availability
+- Runtime writable locations are explicitly mounted.
 
-\\- Added automatic Docker Compose configuration validation using:
+- PHP `display\_errors` is disabled.
 
-  \\`docker compose config\\`
+- PHP errors are logged to container stderr.
 
-\\- The application generator does not automatically execute:
+- `allow\_url\_include` is disabled.
 
-  \\`docker compose up -d\\`
+- `cgi.fix\_pathinfo` is disabled.
 
-  This allows the administrator to review the generated configuration before starting the application.
+- PHP sessions use strict mode.
 
-**\*\*### Security\*\***
+- PHP session cookies use `HttpOnly`.
 
-\\- Application source code is mounted read-only into PHP-FPM containers.
+- PHP session cookies are configured with `Secure`.
 
-\\- Writable application data is separated from application source code.
+- Nginx blocks hidden files.
 
-\\- Containers use \\`no-new-privileges\\`.
+- Nginx blocks access to sensitive configuration and backup files.
 
-\\- Containers use a read-only root filesystem where practical.
+- Nginx blocks PHP execution in writable/upload directories.
 
-\\- Temporary files use dedicated tmpfs storage.
+- Database credentials are stored outside the application source tree.
 
-\\- Runtime writable locations are explicitly mounted.
+- Database credential files use permission `0600`.
 
-\\- PHP \\`display\\\_errors\\` is disabled.
+- Database users are restricted to the application's database.
 
-\\- PHP errors are logged to container stderr.
+- Database user host restrictions are generated from the actual Docker subnet.
 
-\\- \\`allow\\\_url\\\_include\\` is disabled.
+- The project deliberately does not use:
 
-\\- \\`cgi.fix\\\_pathinfo\\` is disabled.
+`cap\_drop: ALL`
 
-\\- PHP sessions use strict mode.
+because of runtime compatibility considerations observed in production environments.
 
-\\- PHP session cookies use \\`HttpOnly\\`.
+### Changed
+- Changed the project database standard from generic MySQL/MariaDB support to:
 
-\\- PHP session cookies are configured with \\`Secure\\`.
+****\\*\\*\\\*\\\*MariaDB as the standard database platform, with MySQL compatibility retained.\\\*\\\*\\*\**\***
 
-\\- Nginx blocks hidden files.
+- Changed supported PHP versions from:
 
-\\- Nginx blocks access to sensitive configuration and backup files.
+`7.4 | 8.3 | 8.4 | 8.5`
 
-\\- Nginx blocks PHP execution in writable/upload directories.
+to:
 
-\\- Database credentials are stored outside the application source tree.
+`7.4 | 8.2 | 8.3 | 8.4 | 8.5`
 
-\\- Database credential files use permission \\`0600\\`.
+- Changed the application generator to automatically create:
 
-\\- Database users are restricted to the application's database.
+- database
 
-\\- Database user host restrictions are generated from the actual Docker subnet.
+- database user
 
-\\- The project deliberately does not use:
+- database password
 
-  \\`cap\\\_drop: ALL\\`
+- database credentials file
 
-  because of runtime compatibility considerations observed in production environments.
+- Changed database host restriction from a fixed Docker network assumption to dynamic detection based on the actual Docker subnet.
 
-**\*\*### Changed\*\***
+- Standardized PHP-to-database communication through TCP.
 
-\\- Changed the project database standard from generic MySQL/MariaDB support to:
+- Standardized Nginx-to-PHP-FPM communication through Unix sockets.
 
-  **\*\*\\\*\\\*MariaDB as the standard database platform, with MySQL compatibility retained.\\\*\\\*\*\***
+- Standardized application container naming:
 
-\\- Changed supported PHP versions from:
+`\<application-name>-php`
 
-  \\`7.4 | 8.3 | 8.4 | 8.5\\`
+- Standardized Docker network naming:
 
-  to:
+`\<application-name>-network`
 
-  \\`7.4 | 8.2 | 8.3 | 8.4 | 8.5\\`
+- Standardized timezone to:
 
-\\- Changed the application generator to automatically create:
+`Asia/Jakarta`
 
-  - database
+- Standardized repository paths:
 
-  - database user
+- Repository: `/opt/docker-php`
 
-  - database password
+- Application Docker configuration: `/opt/docker-apps`
 
-  - database credentials file
+- Application source/data: `/var/apps`
 
-\\- Changed database host restriction from a fixed Docker network assumption to dynamic detection based on the actual Docker subnet.
+### Removed
+- Removed the requirement for `/run/mysqld` socket mounting between the PHP-FPM container and host database.
 
-\\- Standardized PHP-to-database communication through TCP.
+- Database communication now uses TCP through the Docker network gateway.
 
-\\- Standardized Nginx-to-PHP-FPM communication through Unix sockets.
+- Removed hard-coded Docker database host assumptions.
 
-\\- Standardized application container naming:
+### Fixed
+- Fixed database password generation under Bash `set -o pipefail`.
 
-  \\`\\\<application-name>-php\\`
+- Password generation no longer relies on a pipeline that may fail because of `SIGPIPE` from `head`.
 
-\\- Standardized Docker network naming:
+- Database passwords are now generated using:
 
-  \\`\\\<application-name>-network\\`
+- `openssl rand -hex`
 
-\\- Standardized timezone to:
+- or `/dev/urandom` as fallback.
 
-  \\`Asia/Jakarta\\`
+- Improved validation of generated database passwords.
 
-\\- Standardized repository paths:
+- Improved validation of Docker network information.
 
-  - Repository: \\`/opt/docker-php\\`
+### Notes
+- MariaDB is the recommended and standardized database platform for new deployments.
 
-  - Application Docker configuration: \\`/opt/docker-apps\\`
+- MySQL remains supported for environments where MySQL is already deployed or required by the application.
 
-  - Application source/data: \\`/var/apps\\`
+- The application generator automatically uses the available database client.
 
-**\*\*### Removed\*\***
+- The database server itself is not automatically migrated between MariaDB and MySQL.
 
-\\- Removed the requirement for \\`/run/mysqld\\` socket mounting between the PHP-FPM container and host database.
+- Existing production MySQL installations should not be replaced automatically.
 
-\\- Database communication now uses TCP through the Docker network gateway.
+- Database root credentials are not modified automatically by the application generator.
 
-\\- Removed hard-coded Docker database host assumptions.
+- Database root accounts should remain restricted to trusted/local administration.
 
-**\*\*### Fixed\*\***
+- `scripts/check-requirements.sh` should not automatically overwrite an existing production database configuration.
 
-\\- Fixed database password generation under Bash \\`set -o pipefail\\`.
+- `mariadb-secure-installation` remains an interactive security hardening step and is not executed automatically.
 
-\\- Password generation no longer relies on a pipeline that may fail because of \\`SIGPIPE\\` from \\`head\\`.
+- The requirement installation process does not automatically modify:
 
-\\- Database passwords are now generated using:
+- firewall rules
 
-  - \\`openssl rand -hex\\`
+- database network binding
 
-  - or \\`/dev/urandom\\` as fallback.
+- Docker daemon configuration
 
-\\- Improved validation of generated database passwords.
+- DNS configuration
 
-\\- Improved validation of Docker network information.
+- external reverse proxy configuration
 
-**\*\*### Notes\*\***
+- TLS certificates
 
-\\- MariaDB is the recommended and standardized database platform for new deployments.
+- application-specific configuration
 
-\\- MySQL remains supported for environments where MySQL is already deployed or required by the application.
+- PHP 7.4 is retained only for legacy application compatibility and should not be selected for new applications.
 
-\\- The application generator automatically uses the available database client.
+- PHP 8.2 is supported for applications whose dependency requirements are compatible with PHP 8.2.
 
-\\- The database server itself is not automatically migrated between MariaDB and MySQL.
+- PHP 8.3, 8.4, and 8.5 are available for applications requiring newer PHP runtimes.
 
-\\- Existing production MySQL installations should not be replaced automatically.
+- The selected PHP version must be compatible with the application's dependency lock file.
 
-\\- Database root credentials are not modified automatically by the application generator.
+- Composer is intentionally not included in the PHP-FPM runtime image.
 
-\\- Database root accounts should remain restricted to trusted/local administration.
+- Application dependencies should be installed separately from the production PHP-FPM runtime container.
 
-\\- \\`scripts/check-requirements.sh\\` should not automatically overwrite an existing production database configuration.
+- `session.cookie\_secure = 1` assumes that the application is served through HTTPS.
 
-\\- \\`mariadb-secure-installation\\` remains an interactive security hardening step and is not executed automatically.
+- Redis extension compatibility should be tested against the target application before production deployment.
 
-\\- The requirement installation process does not automatically modify:
+- The generated Docker network uses `driver: bridge`.
 
-  - firewall rules
+- Docker Compose may report a warning when the application network was created by the generator rather than by Compose itself. The network remains intentionally managed as a standard bridge network by the generator.
 
-  - database network binding
+## [1.0.0] - 2026-09-10
+### Added
+- Initial production-ready structure for the `docker-php` repository.
 
-  - Docker daemon configuration
+- Standardized PHP-FPM Docker image templates.
 
-  - DNS configuration
+- Standardized Nginx configuration.
 
-  - external reverse proxy configuration
+- Standardized Docker Compose configuration.
 
-  - TLS certificates
+- Standardized application directory structure.
 
-  - application-specific configuration
+- Framework-aware application generator.
 
-\\- PHP 7.4 is retained only for legacy application compatibility and should not be selected for new applications.
+- Initial Laravel, CodeIgniter 4, and Generic PHP support.
 
-\\- PHP 8.2 is supported for applications whose dependency requirements are compatible with PHP 8.2.
+- Initial Docker and Nginx validation.
 
-\\- PHP 8.3, 8.4, and 8.5 are available for applications requiring newer PHP runtimes.
+- Initial production security hardening guidance.
 
-\\- The selected PHP version must be compatible with the application's dependency lock file.
-
-\\- Composer is intentionally not included in the PHP-FPM runtime image.
-
-\\- Application dependencies should be installed separately from the production PHP-FPM runtime container.
-
-\\- \\`session.cookie\\\_secure = 1\\` assumes that the application is served through HTTPS.
-
-\\- Redis extension compatibility should be tested against the target application before production deployment.
-
-\\- The generated Docker network uses \\`driver: bridge\\`.
-
-\\- Docker Compose may report a warning when the application network was created by the generator rather than by Compose itself. The network remains intentionally managed as a standard bridge network by the generator.
-
-**\*\*## [1.0.0] - 2026-09-10\*\***
-
-**\*\*### Added\*\***
-
-\\- Initial production-ready structure for the \\`docker-php\\` repository.
-
-\\- Standardized PHP-FPM Docker image templates.
-
-\\- Standardized Nginx configuration.
-
-\\- Standardized Docker Compose configuration.
-
-\\- Standardized application directory structure.
-
-\\- Framework-aware application generator.
-
-\\- Initial Laravel, CodeIgniter 4, and Generic PHP support.
-
-\\- Initial Docker and Nginx validation.
-
-\\- Initial production security hardening guidance.
-
-**\*\*## Versioning\*\***
-
+## Versioning
 This project uses Semantic Versioning:
 
-\\- **\*\*\\\*\\\*MAJOR\\\*\\\*\*\*** — incompatible changes to the deployment architecture or configuration.
+- ****\\*\\*\\\*\\\*MAJOR\\\*\\\*\\*\**\*** — incompatible changes to the deployment architecture or configuration.
 
-\\- **\*\*\\\*\\\*MINOR\\\*\\\*\*\*** — backward-compatible features and improvements.
+- ****\\*\\*\\\*\\\*MINOR\\\*\\\*\\*\**\*** — backward-compatible features and improvements.
 
-\\- **\*\*\\\*\\\*PATCH\\\*\\\*\*\*** — backward-compatible bug fixes and corrections.
+- ****\\*\\*\\\*\\\*PATCH\\\*\\\*\\*\**\*** — backward-compatible bug fixes and corrections.
 
-**\*\*### Release History\*\***
+### Release History
+| Version | Release Date | Description |
 
-\\| Version | Release Date | Description |
+|---|---|---|
 
-\\|---|---|---|
+| ****\\*\\*\\\*\\\*1.1.0\\\*\\\*\\*\**\*** | ****\\*\\*\\\*\\\*2026-09-18\\\*\\\*\\*\**\*** | Added PHP 8.2 support, standardized MariaDB as the database platform while retaining MySQL compatibility, automatic database/user/password creation, dynamic Docker subnet-based database access restriction, dedicated Laravel writable runtime mounts, external Composer preparation, and improvements to the application generator. |
 
-\\| **\*\*\\\*\\\*1.1.0\\\*\\\*\*\*** | **\*\*\\\*\\\*2026-09-18\\\*\\\*\*\*** | Added PHP 8.2 support, standardized MariaDB as the database platform while retaining MySQL compatibility, automatic database/user/password creation, dynamic Docker subnet-based database access restriction, dedicated Laravel writable runtime mounts, external Composer preparation, and improvements to the application generator. |
+| ****\\*\\*\\\*\\\*1.0.0\\\*\\\*\\*\**\*** | ****\\*\\*\\\*\\\*2026-09-10\\\*\\\*\\*\**\*** | Initial standardized production PHP-FPM Docker deployment release. |
 
-\\| **\*\*\\\*\\\*1.0.0\\\*\\\*\*\*** | **\*\*\\\*\\\*2026-09-10\\\*\\\*\*\*** | Initial standardized production PHP-FPM Docker deployment release. |
+[Unreleased]: https://github.com/NRTechnology/docker-php/compare/v1.1.0...HEAD
 
-[Unreleased]: https\\://github.com/NRTechnology/docker-php/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/NRTechnology/docker-php/releases/tag/v1.1.0
 
-[1.1.0]: https\\://github.com/NRTechnology/docker-php/releases/tag/v1.1.0
-
-[1.0.0]: https\\://github.com/NRTechnology/docker-php/releases/tag/v1.0.0
+[1.0.0]: https://github.com/NRTechnology/docker-php/releases/tag/v1.0.0
