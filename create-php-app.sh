@@ -259,6 +259,85 @@ done
 
 
 # ==============================================================================
+# DATABASE PREFLIGHT
+# ==============================================================================
+
+log "Memeriksa koneksi database..."
+
+"${DATABASE_CLIENT}" -e "SELECT 1;" >/dev/null 2>&1 \
+    || die "Tidak dapat terhubung ke MySQL/MariaDB menggunakan akun saat ini."
+
+log "Koneksi database berhasil."
+
+
+# ==============================================================================
+# CHECK EXISTING DATABASE / USER
+# ==============================================================================
+
+log "Memeriksa database dan user existing..."
+
+DB_EXISTS="$(
+    "${DATABASE_CLIENT}" -Nse \
+        "SELECT COUNT(*)
+         FROM information_schema.SCHEMATA
+         WHERE SCHEMA_NAME='${DB_NAME}';"
+)"
+
+DB_USER_EXISTS="$(
+    "${DATABASE_CLIENT}" -Nse \
+        "SELECT COUNT(*)
+         FROM mysql.user
+         WHERE User='${DB_USER}';"
+)"
+
+DB_CONFLICT=0
+
+if [[ "$DB_EXISTS" != "0" ]]; then
+    warn "Database sudah ada: ${DB_NAME}"
+    DB_CONFLICT=1
+else
+    log "Database belum ada: ${DB_NAME}"
+fi
+
+if [[ "$DB_USER_EXISTS" != "0" ]]; then
+    warn "Database user sudah ada: ${DB_USER}"
+    log "Host yang dimiliki user '${DB_USER}':"
+
+    "${DATABASE_CLIENT}" -Nse \
+        "SELECT CONCAT('  - ', Host)
+         FROM mysql.user
+         WHERE User='${DB_USER}'
+         ORDER BY Host;"
+
+    DB_CONFLICT=1
+else
+    log "Database user belum ada: ${DB_USER}"
+fi
+
+if [[ "$DB_CONFLICT" -ne 0 ]]; then
+    echo
+    echo "============================================================"
+    echo "DATABASE / USER CONFLICT"
+    echo "============================================================"
+
+    [[ "$DB_EXISTS" != "0" ]] && \
+        echo "Database : ${DB_NAME} (SUDAH ADA)"
+
+    [[ "$DB_USER_EXISTS" != "0" ]] && \
+        echo "User     : ${DB_USER} (SUDAH ADA)"
+
+    echo
+    echo "Script tidak akan mengubah atau menghapus"
+    echo "database/user yang sudah ada."
+    echo "============================================================"
+
+    die "Database atau database user sudah ada."
+fi
+
+log "Database dan database user belum digunakan."
+
+
+# ==============================================================================
 # CHECK PHP IMAGE
 # ==============================================================================
 
@@ -268,12 +347,9 @@ docker image inspect "$IMAGE_NAME" >/dev/null 2>&1 \
 if [[ "$FRAMEWORK" == "laravel" ]]; then
     docker image inspect "composer:2" >/dev/null 2>&1 || {
         log "Image composer:2 tidak ditemukan. Pulling composer:2..."
-        docker pull composer:2 >/dev/null             || die "Gagal pull image composer:2."
+        docker pull composer:2 >/dev/null \
+            || die "Gagal pull image composer:2."
     }
-fi
-
-if [[ "$PHP_VERSION" == "7.4" ]]; then
-    warn "PHP 7.4 adalah versi legacy/EOL."
 fi
 
 
@@ -293,7 +369,6 @@ docker network create \
     || die "Gagal membuat Docker network: $NETWORK_NAME"
 
 log "Docker network berhasil dibuat: $NETWORK_NAME"
-
 
 
 # ==============================================================================
@@ -332,31 +407,27 @@ NETWORK_BASE="${NETWORK_SUBNET%/*}"
 IFS='.' read -r OCT1 OCT2 OCT3 OCT4 <<< "$NETWORK_BASE"
 
 case "$NETWORK_CIDR" in
-
     8)
         DB_HOST_PATTERN="${OCT1}.%"
         ;;
-
     16)
         DB_HOST_PATTERN="${OCT1}.${OCT2}.%"
         ;;
-
     24)
         DB_HOST_PATTERN="${OCT1}.${OCT2}.${OCT3}.%"
         ;;
-
     *)
         die "Subnet Docker tidak didukung untuk automatic database host restriction: ${NETWORK_SUBNET}"
         ;;
-
 esac
 
 log "Database allowed host: ${DB_HOST_PATTERN}"
 
 
-
 # ==============================================================================
 # FRAMEWORK CONFIGURATION
+# ==============================================================================
+
 # ==============================================================================
 
 case "$FRAMEWORK" in
@@ -526,45 +597,7 @@ if [[ "$FRAMEWORK" == "laravel" ]]; then
 fi
 
 
-# ==============================================================================
-# MYSQL / MARIADB DATABASE
-# ==============================================================================
-
-log "Memeriksa koneksi database..."
-
-"${DATABASE_CLIENT}" -e "SELECT 1;" >/dev/null 2>&1 \
-    || die "Tidak dapat terhubung ke MySQL/MariaDB menggunakan akun saat ini."
-
-log "Koneksi database berhasil."
-
-
-# ==============================================================================
-# CHECK EXISTING DATABASE
-# ==============================================================================
-
-DB_EXISTS="$(
-    "${DATABASE_CLIENT}" -Nse \
-        "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='${DB_NAME}';"
-)"
-
-[[ "$DB_EXISTS" == "0" ]] \
-    || die "Database sudah ada: ${DB_NAME}"
-
-
-# ==============================================================================
-# CHECK EXISTING DATABASE USER
-# ==============================================================================
-
-DB_USER_EXISTS="$(
-    "${DATABASE_CLIENT}" -Nse \
-        "SELECT COUNT(*) FROM mysql.user WHERE User='${DB_USER}' AND Host='${DB_HOST_PATTERN}';"
-)"
-
-[[ "$DB_USER_EXISTS" == "0" ]] \
-    || die "Database user sudah ada: '${DB_USER}'@'${DB_HOST_PATTERN}'"
-
-
-# ==============================================================================
+# ==============================================================================\n# MYSQL / MARIADB DATABASE CREATION\n# ==============================================================================\n\n# ==============================================================================
 # GENERATE DATABASE PASSWORD
 # ==============================================================================
 
