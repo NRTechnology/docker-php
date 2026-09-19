@@ -26,13 +26,13 @@ Repository ini menyediakan standar deployment PHP-FPM berbasis Docker dengan:
 
 \- Dukungan multiple PHP versions dalam satu server
 
-**\*\*Current Release: \`1.1.0\`\*\***
+**\*\*Current Release: `1.1.0`\*\***
 
 **---**
 
 **## Architecture**
 
-\`\`\`text
+```text
 
                          PRODUCTION SERVER
 
@@ -88,7 +88,7 @@ Repository ini menyediakan standar deployment PHP-FPM berbasis Docker dengan:
 
 └───────────────────────────────────────────────────────────────┘
 
-\`\`\`
+```
 
 Setiap aplikasi memiliki:
 
@@ -114,7 +114,7 @@ Dengan arsitektur ini, satu server dapat menjalankan beberapa aplikasi dengan ve
 
 Contoh:
 
-\`\`\`text
+```text
 
 myapp   → PHP 8.3
 
@@ -124,7 +124,7 @@ myapp3  → PHP 8.5
 
 legacy  → PHP 7.4
 
-\`\`\`
+```
 
 **---**
 
@@ -134,15 +134,15 @@ legacy  → PHP 7.4
 
 \|---|---|---|
 
-\| PHP 7.4 | \`local/php:7.4\` | Legacy application |
+\| PHP 7.4 | `local/php:7.4` | Legacy application |
 
-\| PHP 8.2 | \`local/php:8.2\` | Application compatible with PHP 8.2 |
+\| PHP 8.2 | `local/php:8.2` | Application compatible with PHP 8.2 |
 
-\| PHP 8.3 | \`local/php:8.3\` | Production |
+\| PHP 8.3 | `local/php:8.3` | Production |
 
-\| PHP 8.4 | \`local/php:8.4\` | Production |
+\| PHP 8.4 | `local/php:8.4` | Production |
 
-\| PHP 8.5 | \`local/php:8.5\` | Production |
+\| PHP 8.5 | `local/php:8.5` | Production |
 
 \> **\*\*Note:\*\*** PHP 7.4 sudah End-of-Life dan hanya dipertahankan untuk kompatibilitas aplikasi legacy. Jangan gunakan PHP 7.4 untuk aplikasi baru.
 
@@ -154,7 +154,7 @@ Versi PHP yang digunakan aplikasi harus sesuai dengan requirement aplikasi dan d
 
 Application generator mendukung:
 
-\`\`\`text
+```text
 
 laravel
 
@@ -162,21 +162,21 @@ ci
 
 generic
 
-\`\`\`
+```
 
 **## Laravel**
 
 Document root:
 
-\`\`\`text
+```text
 
 /var/apps/<application-name>/htdocs/public
 
-\`\`\`
+```
 
 Writable/runtime directories:
 
-\`\`\`text
+```text
 
 /var/apps/<application-name>/data/
 
@@ -188,11 +188,11 @@ Writable/runtime directories:
 ├── storage-logs/
 └── bootstrap-cache/
 
-\`\`\`
+```
 
 Mapping ke container:
 
-\`\`\`text
+```text
 
 data/vendor
     ↓
@@ -214,7 +214,7 @@ data/bootstrap-cache
     ↓
 /var/www/html/bootstrap/cache
 
-\`\`\`
+```
 
 Laravel source tetap read-only. Directory vendor, storage, dan bootstrap cache dipisahkan sebagai writable mount.
 
@@ -222,15 +222,15 @@ Laravel source tetap read-only. Directory vendor, storage, dan bootstrap cache d
 
 Document root:
 
-\`\`\`text
+```text
 
 /var/apps/\<application-name>/htdocs/public
 
-\`\`\`
+```
 
 Writable directory:
 
-\`\`\`text
+```text
 
 /var/apps/\<application-name>/data/writable/
 
@@ -242,11 +242,11 @@ Writable directory:
 
 └── uploads/
 
-\`\`\`
+```
 
 Mapping ke container:
 
-\`\`\`text
+```text
 
 /var/apps/\<application-name>/data/writable
 
@@ -254,7 +254,7 @@ Mapping ke container:
 
 /var/www/html/writable
 
-\`\`\`
+```
 
 **## Generic PHP**
 
@@ -262,15 +262,15 @@ Untuk aplikasi PHP custom atau legacy:
 
 Document root:
 
-\`\`\`text
+```text
 
 /var/apps/\<application-name>/htdocs
 
-\`\`\`
+```
 
 Writable directory:
 
-\`\`\`text
+```text
 
 /var/apps/\<application-name>/data/writable/
 
@@ -282,11 +282,11 @@ Writable directory:
 
 └── uploads/
 
-\`\`\`
+```
 
 Mapping ke container:
 
-\`\`\`text
+```text
 
 /var/apps/\<application-name>/data/writable
 
@@ -294,13 +294,13 @@ Mapping ke container:
 
 /var/www/html/data
 
-\`\`\`
+```
 
 **---**
 
 **# Repository Structure**
 
-\`\`\`text
+```text
 
 /opt/docker-php/
 
@@ -372,13 +372,13 @@ Mapping ke container:
 
     └── test-images.sh
 
-\`\`\`
+```
 
 **---**
 
 **# Production Directory Layout**
 
-\`\`\`text
+```text
 
 /opt/
 
@@ -390,9 +390,9 @@ Mapping ke container:
 
 └── apps/
 
-\`\`\`
+```
 
-**## \`/opt/docker-php\`**
+**## `/opt/docker-php`**
 
 Repository utama yang berisi:
 
@@ -416,13 +416,13 @@ Repository utama yang berisi:
 
 \- Documentation
 
-**## \`/opt/docker-apps\`**
+**## `/opt/docker-apps`**
 
 Berisi konfigurasi deployment Docker untuk masing-masing aplikasi.
 
 Contoh:
 
-\`\`\`text
+```text
 
 /opt/docker-apps/myapp/
 
@@ -432,17 +432,17 @@ Contoh:
 
 └── db-credentials.env
 
-\`\`\`
+```
 
-Database credentials dibuat otomatis oleh \`create-php-app.sh\`.
+Database credentials dibuat otomatis oleh `create-php-app.sh`.
 
-**## \`/var/apps\`**
+**## `/var/apps`**
 
 Berisi source code dan runtime data aplikasi.
 
 Laravel:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/
 
@@ -458,11 +458,11 @@ Laravel:
 ├── backup/
 └── composer/
 
-\`\`\`
+```
 
 CodeIgniter 4 / Generic PHP:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/
 
@@ -476,18 +476,18 @@ CodeIgniter 4 / Generic PHP:
 ├── logs/
 └── backup/
 
-\`\`\`
+```
 
 | Directory | Fungsi | Access |
 |---|---|---|
-| \`htdocs/\` | Application source | Read Only |
-| \`data/vendor/\` | Laravel Composer dependencies | Read/Write |
-| \`data/storage-*\` | Laravel runtime/storage | Read/Write |
-| \`data/bootstrap-cache/\` | Laravel bootstrap cache | Read/Write |
-| \`data/writable/\` | CI4/Generic runtime data | Read/Write |
-| \`logs/\` | Application logs | Read/Write |
-| \`backup/\` | Application backup | Read/Write |
-| \`composer/\` | Composer binary | Read Only |
+| `htdocs/` | Application source | Read Only |
+| `data/vendor/` | Laravel Composer dependencies | Read/Write |
+| `data/storage-*` | Laravel runtime/storage | Read/Write |
+| `data/bootstrap-cache/` | Laravel bootstrap cache | Read/Write |
+| `data/writable/` | CI4/Generic runtime data | Read/Write |
+| `logs/` | Application logs | Read/Write |
+| `backup/` | Application backup | Read/Write |
+| `composer/` | Composer binary | Read Only |
 
 **---**
 
@@ -511,7 +511,7 @@ MySQL tetap dapat digunakan apabila server telah menggunakan MySQL.
 
 **## 2. Clone Repository**
 
-\`\`\`bash
+```bash
 
 mkdir -p /opt
 
@@ -521,25 +521,25 @@ git clone https\://github.com/NRTechnology/docker-php.git docker-php
 
 cd /opt/docker-php
 
-\`\`\`
+```
 
 **## 3. Make Scripts Executable**
 
-\`\`\`bash
+```bash
 
 chmod +x create-php-app.sh
 
 chmod +x scripts/\*.sh
 
-\`\`\`
+```
 
 Verify:
 
-\`\`\`bash
+```bash
 
 ls -lah create-php-app.sh scripts/
 
-\`\`\`
+```
 
 **---**
 
@@ -547,11 +547,11 @@ ls -lah create-php-app.sh scripts/
 
 Requirement installation dilakukan menggunakan:
 
-\`\`\`text
+```text
 
 scripts/install-requirements.sh
 
-\`\`\`
+```
 
 Script digunakan untuk memeriksa dan memasang komponen dasar:
 
@@ -567,17 +567,17 @@ Script digunakan untuk memeriksa dan memasang komponen dasar:
 
 Jalankan:
 
-\`\`\`bash
+```bash
 
 cd /opt/docker-php
 
 ./scripts/install-requirements.sh
 
-\`\`\`
+```
 
 Verifikasi:
 
-\`\`\`bash
+```bash
 
 nginx -v
 
@@ -587,11 +587,11 @@ docker compose version
 
 mariadb --version
 
-\`\`\`
+```
 
 Verifikasi service:
 
-\`\`\`bash
+```bash
 
 systemctl status nginx
 
@@ -599,7 +599,7 @@ systemctl status docker
 
 systemctl status mariadb
 
-\`\`\`
+```
 
 \> **\*\*Important:\*\*** Script requirement tidak secara otomatis mengganti konfigurasi production yang sudah ada.
 
@@ -621,7 +621,7 @@ Script juga tidak secara otomatis mengubah:
 
 **### MariaDB Security**
 
-\`mariadb-secure-installation\` tidak dijalankan otomatis karena merupakan proses interaktif.
+`mariadb-secure-installation` tidak dijalankan otomatis karena merupakan proses interaktif.
 
 Setelah instalasi MariaDB, administrator disarankan melakukan hardening secara manual.
 
@@ -631,15 +631,15 @@ Setelah instalasi MariaDB, administrator disarankan melakukan hardening secara m
 
 Database standar project adalah:
 
-\`\`\`text
+```text
 
 MariaDB
 
-\`\`\`
+```
 
 Arsitektur:
 
-\`\`\`text
+```text
 
 PHP-FPM Container
 
@@ -653,11 +653,11 @@ PHP-FPM Container
 
     Host OS
 
-\`\`\`
+```
 
 MySQL tetap didukung:
 
-\`\`\`text
+```text
 
 PHP-FPM Container
 
@@ -671,13 +671,13 @@ PHP-FPM Container
 
     Host OS
 
-\`\`\`
+```
 
 Application generator mendeteksi database client yang tersedia.
 
 Prioritas:
 
-\`\`\`text
+```text
 
 mariadb
 
@@ -685,11 +685,11 @@ mariadb
 
 mysql
 
-\`\`\`
+```
 
-Jika \`mariadb\` tersedia, client tersebut digunakan.
+Jika `mariadb` tersedia, client tersebut digunakan.
 
-Jika tidak tersedia tetapi \`mysql\` tersedia, client MySQL digunakan.
+Jika tidak tersedia tetapi `mysql` tersedia, client MySQL digunakan.
 
 **---**
 
@@ -699,25 +699,25 @@ Image PHP harus tersedia sebelum membuat application environment.
 
 Build script:
 
-\`\`\`text
+```text
 
 scripts/build-image.sh
 
-\`\`\`
+```
 
 **## Interactive Mode**
 
-\`\`\`bash
+```bash
 
 cd /opt/docker-php
 
 ./scripts/build-image.sh
 
-\`\`\`
+```
 
 Menu menyediakan pilihan:
 
-\`\`\`text
+```text
 
 1\. PHP 7.4
 
@@ -735,11 +735,11 @@ Menu menyediakan pilihan:
 
 0\. Exit
 
-\`\`\`
+```
 
 **## Build Specific Version**
 
-\`\`\`bash
+```bash
 
 ./scripts/build-image.sh 8.2
 
@@ -751,19 +751,19 @@ Menu menyediakan pilihan:
 
 ./scripts/build-image.sh 7.4
 
-\`\`\`
+```
 
 **## Build All Images**
 
-\`\`\`bash
+```bash
 
 ./scripts/build-image.sh all
 
-\`\`\`
+```
 
 Image yang dihasilkan:
 
-\`\`\`text
+```text
 
 local/php:7.4
 
@@ -775,7 +775,7 @@ local/php:8.4
 
 local/php:8.5
 
-\`\`\`
+```
 
 **---**
 
@@ -783,11 +783,11 @@ local/php:8.5
 
 Image dapat diverifikasi menggunakan:
 
-\`\`\`bash
+```bash
 
 ./scripts/test-images.sh
 
-\`\`\`
+```
 
 Pemeriksaan meliputi:
 
@@ -801,7 +801,7 @@ Pemeriksaan meliputi:
 
 Manual verification:
 
-\`\`\`bash
+```bash
 
 docker run --rm local/php:8.4 php -v
 
@@ -809,7 +809,7 @@ docker run --rm local/php:8.4 php -m
 
 docker run --rm local/php:8.4 php-fpm -t
 
-\`\`\`
+```
 
 **---**
 
@@ -817,23 +817,23 @@ docker run --rm local/php:8.4 php-fpm -t
 
 Application generator:
 
-\`\`\`text
+```text
 
 create-php-app.sh
 
-\`\`\`
+```
 
 Syntax:
 
-\`\`\`bash
+```bash
 
 ./create-php-app.sh \<application-name> \<php-version> \<framework> \<domain-name>
 
-\`\`\`
+```
 
 Supported framework:
 
-\`\`\`text
+```text
 
 laravel
 
@@ -841,11 +841,11 @@ ci
 
 generic
 
-\`\`\`
+```
 
 Supported PHP versions:
 
-\`\`\`text
+```text
 
 7.4
 
@@ -857,43 +857,43 @@ Supported PHP versions:
 
 8.5
 
-\`\`\`
+```
 
 **## Laravel**
 
-\`\`\`bash
+```bash
 
 ./create-php-app.sh myapp 8.3 laravel myapp.example.go.id
 
-\`\`\`
+```
 
 **## CodeIgniter 4**
 
-\`\`\`bash
+```bash
 
 ./create-php-app.sh myapp2 8.4 ci myapp2.example.go.id
 
-\`\`\`
+```
 
 **## Generic PHP**
 
-\`\`\`bash
+```bash
 
 ./create-php-app.sh myapp3 8.5 generic myapp3.example.go.id
 
-\`\`\`
+```
 
 **## Legacy Application**
 
-\`\`\`bash
+```bash
 
 ./create-php-app.sh legacy-app 7.4 generic legacy.example.go.id
 
-\`\`\`
+```
 
 **---**
 
-**# What \`create-php-app.sh\` Does**
+**# What `create-php-app.sh` Does**
 
 Generator melakukan beberapa proses secara otomatis.
 
@@ -928,13 +928,13 @@ Generator juga melakukan database preflight sebelum membuat resource deployment:
 
 Contoh pemeriksaan:
 
-\`\`\`bash
+```bash
 mysql -u root -e "SELECT 1;"
-\`\`\`
+```
 
 **## 2. Create Application Directories**
 
-\`\`\`text
+```text
 
 /var/apps/myapp/
 
@@ -948,25 +948,25 @@ mysql -u root -e "SELECT 1;"
 
 └── backup/
 
-\`\`\`
+```
 
 **## 3. Create Docker Network**
 
 Setiap aplikasi mendapatkan network sendiri:
 
-\`\`\`text
+```text
 
 myapp-network
 
-\`\`\`
+```
 
 Network menggunakan:
 
-\`\`\`yaml
+```yaml
 
 driver: bridge
 
-\`\`\`
+```
 
 Generator membuat network setelah database preflight berhasil dan membaca subnet serta gateway aktual setelah network dibuat.
 
@@ -976,57 +976,57 @@ Jika network dengan nama yang sama sudah ada, generator **menghentikan proses** 
 
 Generator secara otomatis membuat database:
 
-\`\`\`text
+```text
 
 myapp
 
-\`\`\`
+```
 
 Database menggunakan:
 
-\`\`\`text
+```text
 
 utf8mb4
 
 utf8mb4_unicode_ci
 
-\`\`\`
+```
 
 **## 5. Create Database User**
 
 Generator membuat user:
 
-\`\`\`text
+```text
 
 myapp
 
-\`\`\`
+```
 
 User hanya diberikan privilege terhadap database aplikasi:
 
-\`\`\`text
+```text
 
 myapp.\*
 
-\`\`\`
+```
 
 **## 6. Generate Database Password**
 
 Password database dibuat otomatis menggunakan random generator:
 
-\`\`\`text
+```text
 
 openssl rand -hex
 
-\`\`\`
+```
 
 atau fallback:
 
-\`\`\`text
+```text
 
 /dev/urandom
 
-\`\`\`
+```
 
 Password tidak menggunakan password default.
 
@@ -1036,29 +1036,29 @@ Host database user ditentukan berdasarkan subnet Docker aktual.
 
 Contoh:
 
-\`\`\`text
+```text
 
 Docker subnet:
 
 172.24.0.0/16
 
-\`\`\`
+```
 
 Database user dapat dibatasi menjadi:
 
-\`\`\`text
+```text
 
 'myapp'@'172.24.%'
 
-\`\`\`
+```
 
 Tujuannya menghindari penggunaan:
 
-\`\`\`text
+```text
 
 'myapp'@'%'
 
-\`\`\`
+```
 
 yang terlalu luas.
 
@@ -1068,15 +1068,15 @@ yang terlalu luas.
 
 Credentials disimpan di:
 
-\`\`\`text
+```text
 
 /opt/docker-apps/myapp/db-credentials.env
 
-\`\`\`
+```
 
 Contoh:
 
-\`\`\`env
+```env
 
 DB_CONNECTION=mysql
 
@@ -1090,35 +1090,35 @@ DB_USERNAME=myapp
 
 DB_PASSWORD=\<generated-password>
 
-\`\`\`
+```
 
 Permission:
 
-\`\`\`text
+```text
 
 0600
 
-\`\`\`
+```
 
 Owner:
 
-\`\`\`text
+```text
 
 root\:root
 
-\`\`\`
+```
 
 Periksa:
 
-\`\`\`bash
+```bash
 
 cat /opt/docker-apps/myapp/db-credentials.env
 
-\`\`\`
+```
 
-\> Jangan memasukkan file \`db-credentials.env\` ke Git repository.
+\> Jangan memasukkan file `db-credentials.env` ke Git repository.
 
-\`DB_CONNECTION=mysql\` digunakan karena nama driver database Laravel adalah \`mysql\`,
+`DB_CONNECTION=mysql` digunakan karena nama driver database Laravel adalah `mysql`,
 
 baik ketika backend database menggunakan MySQL maupun MariaDB.
 
@@ -1128,7 +1128,7 @@ baik ketika backend database menggunakan MySQL maupun MariaDB.
 
 Generator membuat:
 
-\`\`\`text
+```text
 
 /opt/docker-apps/myapp/
 
@@ -1138,23 +1138,23 @@ Generator membuat:
 
 └── db-credentials.env
 
-\`\`\`
+```
 
 Docker Compose menggunakan:
 
-\`\`\`yaml
+```yaml
 
 image: local/php:\<version>
 
-\`\`\`
+```
 
 Contoh:
 
-\`\`\`yaml
+```yaml
 
 image: local/php:8.4
 
-\`\`\`
+```
 
 **---**
 
@@ -1164,21 +1164,21 @@ Container menggunakan beberapa lapisan hardening.
 
 **## Read-Only Root Filesystem**
 
-\`\`\`yaml
+```yaml
 
 read_only: true
 
-\`\`\`
+```
 
 **## Read-Only Application Source**
 
-\`\`\`yaml
+```yaml
 
 volumes:
 
   - /var/apps/myapp/htdocs\:/var/www/html\:ro
 
-\`\`\`
+```
 
 Source code tidak dapat ditulis langsung oleh PHP-FPM.
 
@@ -1188,55 +1188,55 @@ Directory yang membutuhkan write dipisahkan.
 
 Laravel:
 
-\`\`\`text
+```text
 
 storage
 
 bootstrap/cache
 
-\`\`\`
+```
 
 CodeIgniter:
 
-\`\`\`text
+```text
 
 writable
 
-\`\`\`
+```
 
 Generic:
 
-\`\`\`text
+```text
 
 data
 
-\`\`\`
+```
 
 **## No New Privileges**
 
-\`\`\`yaml
+```yaml
 
 security_opt:
 
   - no-new-privileges\:true
 
-\`\`\`
+```
 
 **## Temporary Filesystem**
 
-\`\`\`yaml
+```yaml
 
 tmpfs:
 
   - /tmp\:rw,noexec,nosuid,size=128m
 
-\`\`\`
+```
 
 **## Resource Limits**
 
 Default:
 
-\`\`\`yaml
+```yaml
 
 cpus: "2.0"
 
@@ -1244,11 +1244,11 @@ mem_limit: 1g
 
 pids_limit: 100
 
-\`\`\`
+```
 
 File descriptor limit:
 
-\`\`\`yaml
+```yaml
 
 ulimits:
 
@@ -1258,7 +1258,7 @@ ulimits:
 
     hard: 65535
 
-\`\`\`
+```
 
 Nilai dapat disesuaikan sesuai kebutuhan aplikasi.
 
@@ -1268,17 +1268,17 @@ Nilai dapat disesuaikan sesuai kebutuhan aplikasi.
 
 Project ini **\*\*tidak menggunakan\*\***:
 
-\`\`\`yaml
+```yaml
 
 cap_drop:
 
   - ALL
 
-\`\`\`
+```
 
 Hardening dilakukan menggunakan:
 
-\`\`\`text
+```text
 
 read_only
 
@@ -1294,7 +1294,7 @@ read-only source code
 
 isolated writable directories
 
-\`\`\`
+```
 
 Keputusan ini dibuat berdasarkan pertimbangan kompatibilitas runtime aplikasi di lingkungan production.
 
@@ -1306,25 +1306,25 @@ PHP-FPM menggunakan Unix socket.
 
 Contoh:
 
-\`\`\`text
+```text
 
 /run/php/myapp.sock
 
-\`\`\`
+```
 
 Nginx:
 
-\`\`\`nginx
+```nginx
 
 fastcgi_pass unix:/run/php/myapp.sock;
 
-\`\`\`
+```
 
 Tidak diperlukan port TCP PHP-FPM berbeda untuk setiap aplikasi.
 
 Contoh:
 
-\`\`\`text
+```text
 
 /run/php/
 
@@ -1334,7 +1334,7 @@ Contoh:
 
 └── myapp3.sock
 
-\`\`\`
+```
 
 Keuntungan:
 
@@ -1354,50 +1354,50 @@ Nginx berjalan langsung pada host.
 
 Virtual host:
 
-\`\`\`text
+```text
 
 /etc/nginx/sites-available/
 
-\`\`\`
+```
 
 Enabled site:
 
-\`\`\`text
+```text
 
 /etc/nginx/sites-enabled/
 
-\`\`\`
+```
 
 Contoh:
 
-\`\`\`text
+```text
 
 /etc/nginx/sites-available/myapp.conf
 
 /etc/nginx/sites-enabled/myapp.conf
 
-\`\`\`
+```
 
 Generator otomatis membuat dan mengaktifkan virtual host.
 
 Untuk PHP-FPM container, `SCRIPT_FILENAME` menggunakan path filesystem di dalam container:
 
-\`\`\`nginx
+```nginx
 fastcgi_param SCRIPT_FILENAME /var/www/html/public$fastcgi_script_name;
 fastcgi_param DOCUMENT_ROOT /var/www/html/public;
-\`\`\`
+```
 
 Path source pada host:
 
-\`\`\`text
+```text
 /var/apps/myapp/htdocs/public
-\`\`\`
+```
 
 dipetakan ke container:
 
-\`\`\`text
+```text
 /var/www/html/public
-\`\`\`
+```
 
 Dengan demikian Nginx host tidak mengirim path host ke PHP-FPM container.
 
@@ -1415,13 +1415,13 @@ Generated Nginx configuration menyediakan:
 
 \- PHP-FPM Unix socket
 
-\- \`try_files\`
+\- `try_files`
 
 \- PHP execution restriction pada writable directories
 
 File sensitif yang diblokir meliputi:
 
-\`\`\`text
+```text
 
 .env
 
@@ -1443,7 +1443,7 @@ File sensitif yang diblokir meliputi:
 
 .swp
 
-\`\`\`
+```
 
 PHP execution juga diblokir pada writable directory aplikasi.
 
@@ -1451,19 +1451,19 @@ PHP execution juga diblokir pada writable directory aplikasi.
 
 **# Validate Nginx**
 
-\`\`\`bash
+```bash
 
 nginx -t
 
-\`\`\`
+```
 
 Jika valid:
 
-\`\`\`bash
+```bash
 
 systemctl reload nginx
 
-\`\`\`
+```
 
 Generator juga menjalankan validasi Nginx selama proses pembuatan application.
 
@@ -1471,21 +1471,21 @@ Generator juga menjalankan validasi Nginx selama proses pembuatan application.
 
 **# Validate Docker Compose**
 
-\`\`\`bash
+```bash
 
 cd /opt/docker-apps/myapp
 
 docker compose config
 
-\`\`\`
+```
 
-Generator juga menjalankan validasi \`docker compose config\` sebelum deployment selesai.
+Generator juga menjalankan validasi `docker compose config` sebelum deployment selesai.
 
 **---**
 
 **# Start Application**
 
-\`\`\`bash
+```bash
 
 cd /opt/docker-apps/myapp
 
@@ -1495,43 +1495,43 @@ docker compose up -d
 
 docker compose ps
 
-\`\`\`
+```
 
 Expected:
 
-\`\`\`text
+```text
 
 myapp-php    ...    Up
 
-\`\`\`
+```
 
 **---**
 
 **# PHP-FPM Logs**
 
-\`\`\`bash
+```bash
 
 docker compose logs --tail=50 php
 
 docker compose logs -f php
 
-\`\`\`
+```
 
 Expected:
 
-\`\`\`text
+```text
 
 fpm is running
 
 ready to handle connections
 
-\`\`\`
+```
 
 **---**
 
 **# PHP Verification**
 
-\`\`\`bash
+```bash
 
 docker compose exec php php -v
 
@@ -1539,7 +1539,7 @@ docker compose exec php php -m
 
 docker compose exec php php-fpm -t
 
-\`\`\`
+```
 
 **---**
 
@@ -1547,58 +1547,58 @@ docker compose exec php php-fpm -t
 
 Source:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/htdocs
 
-\`\`\`
+```
 
 Pastikan:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/htdocs/artisan
 /var/apps/myapp/htdocs/composer.json
 /var/apps/myapp/htdocs/public
 /var/apps/myapp/htdocs/vendor
 
-\`\`\`
+```
 
 `htdocs/vendor` digunakan sebagai mount point. Dependency Composer sebenarnya disimpan di:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/data/vendor
 
-\`\`\`
+```
 
 Document root:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/htdocs/public
 
-\`\`\`
+```
 
 Composer tidak termasuk dalam PHP-FPM runtime image. Generator menyiapkan binary Composer di:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/composer/composer
 
-\`\`\`
+```
 
 dan me-mount-nya read-only ke:
 
-\`\`\`text
+```text
 
 /usr/local/bin/composer
 
-\`\`\`
+```
 
 Install dependency dari container sebagai `www-data`:
 
-\`\`\`bash
+```bash
 cd /opt/docker-apps/myapp
 
 docker compose exec --user www-data php composer install \
@@ -1606,71 +1606,71 @@ docker compose exec --user www-data php composer install \
   --no-interaction \
   --prefer-dist \
   --optimize-autoloader
-\`\`\`
+```
 
 Verifikasi Laravel:
 
-\`\`\`bash
+```bash
 docker compose exec --user www-data php php artisan --version
-\`\`\`
+```
 
 Migration production:
 
-\`\`\`bash
+```bash
 docker compose exec --user www-data php php artisan migrate --force
-\`\`\`
+```
 
 Optimasi Laravel:
 
-\`\`\`bash
+```bash
 docker compose exec --user www-data php php artisan optimize
-\`\`\`
+```
 
 Untuk aplikasi baru yang belum memiliki application key:
 
-\`\`\`bash
+```bash
 docker compose exec --user www-data php php artisan key:generate
-\`\`\`
+```
 
 Public storage:
 
-\`\`\`text
+```text
 /var/apps/myapp/htdocs/public/storage
         ↓
 ../storage/app/public
         ↓
 /var/apps/myapp/data/storage-app/public
-\`\`\`
+```
 
 **# CodeIgniter 4 Deployment**
 
 Source:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/htdocs
 
-\`\`\`
+```
 
 Document root:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/htdocs/public
 
-\`\`\`
+```
 
 Writable:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/data/writable
 
-\`\`\`
+```
 
 Mapping:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/data/writable
 
@@ -1678,7 +1678,7 @@ Mapping:
 
 /var/www/html/writable
 
-\`\`\`
+```
 
 **---**
 
@@ -1686,31 +1686,31 @@ Mapping:
 
 Source:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/htdocs
 
-\`\`\`
+```
 
 Document root:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/htdocs
 
-\`\`\`
+```
 
 Writable:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/data/writable
 
-\`\`\`
+```
 
 Mapping:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/data/writable
 
@@ -1718,7 +1718,7 @@ Mapping:
 
 /var/www/html/data
 
-\`\`\`
+```
 
 **---**
 
@@ -1726,7 +1726,7 @@ Mapping:
 
 Setiap aplikasi mendapatkan environment terisolasi:
 
-\`\`\`text
+```text
 
 Application
 
@@ -1750,11 +1750,11 @@ Application
 
 └── Database
 
-\`\`\`
+```
 
 Contoh:
 
-\`\`\`text
+```text
 
 myapp
 
@@ -1776,7 +1776,7 @@ myapp2
 
 └── /var/apps/myapp2/
 
-\`\`\`
+```
 
 **---**
 
@@ -1786,7 +1786,7 @@ Setiap aplikasi dapat menggunakan versi PHP yang berbeda.
 
 Contoh:
 
-\`\`\`text
+```text
 
 myapp   → PHP 8.3
 
@@ -1794,33 +1794,33 @@ myapp2  → PHP 8.4
 
 myapp3  → PHP 8.5
 
-\`\`\`
+```
 
 Versi PHP ditentukan pada:
 
-\`\`\`text
+```text
 
 /opt/docker-apps/myapp/docker-compose.yml
 
-\`\`\`
+```
 
 Contoh:
 
-\`\`\`yaml
+```yaml
 
 image: local/php:8.4
 
-\`\`\`
+```
 
 Setelah perubahan:
 
-\`\`\`bash
+```bash
 
 cd /opt/docker-apps/myapp
 
 docker compose up -d --force-recreate
 
-\`\`\`
+```
 
 Sebelum upgrade production, pastikan dependency aplikasi kompatibel dengan versi PHP target.
 
@@ -1828,7 +1828,7 @@ Sebelum upgrade production, pastikan dependency aplikasi kompatibel dengan versi
 
 **# Production Deployment Workflow**
 
-\`\`\`text
+```text
 
              SERVER PREPARATION
 
@@ -1900,7 +1900,7 @@ Sebelum upgrade production, pastikan dependency aplikasi kompatibel dengan versi
 
               Application Test
 
-\`\`\`
+```
 
 **---**
 
@@ -1908,41 +1908,41 @@ Sebelum upgrade production, pastikan dependency aplikasi kompatibel dengan versi
 
 **## Step 1 — Install Requirements**
 
-\`\`\`bash
+```bash
 
 cd /opt/docker-php
 
 ./scripts/install-requirements.sh
 
-\`\`\`
+```
 
 **## Step 2 — Build PHP Image**
 
-\`\`\`bash
+```bash
 
 ./scripts/build-image.sh 8.4
 
-\`\`\`
+```
 
 **## Step 3 — Test Image**
 
-\`\`\`bash
+```bash
 
 ./scripts/test-images.sh
 
-\`\`\`
+```
 
 **## Step 4 — Create Application**
 
-\`\`\`bash
+```bash
 
 ./create-php-app.sh myapp 8.4 laravel myapp.example.go.id
 
-\`\`\`
+```
 
 **## Step 5 — Review Configuration**
 
-\`\`\`bash
+```bash
 
 cd /opt/docker-apps/myapp
 
@@ -1950,17 +1950,17 @@ cat docker-compose.yml
 
 cat db-credentials.env
 
-\`\`\`
+```
 
 **## Step 6 — Deploy Application Source**
 
 Copy or clone source code to:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/htdocs
 
-\`\`\`
+```
 
 **## Step 7 — Install Application Dependencies**
 
@@ -1968,15 +1968,15 @@ Dependency installation dilakukan terpisah dari runtime image.
 
 **## Step 8 — Start PHP-FPM**
 
-\`\`\`bash
+```bash
 
 docker compose up -d
 
-\`\`\`
+```
 
 **## Step 9 — Verify**
 
-\`\`\`bash
+```bash
 
 docker compose ps
 
@@ -1984,25 +1984,25 @@ docker compose logs --tail=50 php
 
 ls -lah /run/php/myapp.sock
 
-\`\`\`
+```
 
 **## Step 10 — Validate Nginx**
 
-\`\`\`bash
+```bash
 
 nginx -t
 
 systemctl reload nginx
 
-\`\`\`
+```
 
 **## Step 11 — Test Application**
 
-\`\`\`bash
+```bash
 
 curl -I http\://myapp.example.go.id
 
-\`\`\`
+```
 
 **---**
 
@@ -2010,11 +2010,11 @@ curl -I http\://myapp.example.go.id
 
 Backup directory tersedia di:
 
-\`\`\`text
+```text
 
 /var/apps/myapp/backup/
 
-\`\`\`
+```
 
 Dapat digunakan untuk:
 
@@ -2046,51 +2046,51 @@ Gunakan sistem backup terpisah untuk perlindungan terhadap:
 
 Start:
 
-\`\`\`bash
+```bash
 
 docker compose up -d
 
-\`\`\`
+```
 
 Stop:
 
-\`\`\`bash
+```bash
 
 docker compose down
 
-\`\`\`
+```
 
 Restart:
 
-\`\`\`bash
+```bash
 
 docker compose restart
 
-\`\`\`
+```
 
 Status:
 
-\`\`\`bash
+```bash
 
 docker compose ps
 
-\`\`\`
+```
 
 Logs:
 
-\`\`\`bash
+```bash
 
 docker compose logs -f
 
-\`\`\`
+```
 
 Shell:
 
-\`\`\`bash
+```bash
 
 docker compose exec php bash
 
-\`\`\`
+```
 
 **---**
 
@@ -2100,7 +2100,7 @@ Jika proses deployment berhenti karena error setelah sebagian resource dibuat, b
 
 Contoh untuk `myapp`:
 
-\`\`\`bash
+```bash
 APP_NAME="myapp"
 DB_NAME="myapp"
 DB_USER="myapp"
@@ -2111,7 +2111,7 @@ docker rm -f "${APP_NAME}-composer-bootstrap" 2>/dev/null || true
 
 docker network rm "${NETWORK}" 2>/dev/null || true
 
-mysql -u root -e "DROP DATABASE IF EXISTS \`${DB_NAME}\`;"
+mysql -u root -e "DROP DATABASE IF EXISTS `${DB_NAME}`;"
 
 mysql -u root <<SQL
 SET @sql = NULL;
@@ -2142,7 +2142,7 @@ rm -f "/etc/nginx/sites-enabled/${APP_NAME}.conf"
 rm -f "/etc/nginx/sites-available/${APP_NAME}.conf"
 
 nginx -t && systemctl reload nginx
-\`\`\`
+```
 
 > Jalankan cleanup hanya setelah memastikan nama aplikasi, database, user, network, dan konfigurasi Nginx memang milik deployment yang gagal. Perintah `DROP USER` menghapus seluruh account dengan username tersebut pada semua `Host`.
 
@@ -2152,51 +2152,51 @@ nginx -t && systemctl reload nginx
 
 **## Check Container**
 
-\`\`\`bash
+```bash
 
 docker compose ps
 
-\`\`\`
+```
 
 **## Check PHP-FPM Logs**
 
-\`\`\`bash
+```bash
 
 docker compose logs --tail=100 php
 
-\`\`\`
+```
 
 **## Check Socket**
 
-\`\`\`bash
+```bash
 
 ls -lah /run/php/
 
-\`\`\`
+```
 
 **## Check Nginx**
 
-\`\`\`bash
+```bash
 
 nginx -t
 
-\`\`\`
+```
 
 **## Check Nginx Error Log**
 
-\`\`\`bash
+```bash
 
 tail -f /var/log/nginx/myapp.error.log
 
-\`\`\`
+```
 
 **## Check Application Logs**
 
-\`\`\`bash
+```bash
 
 ls -lah /var/apps/myapp/logs/
 
-\`\`\`
+```
 
 **---**
 
@@ -2260,21 +2260,21 @@ Root database sebaiknya hanya dapat digunakan dari lokasi administrasi yang dipe
 
 File:
 
-\`\`\`text
+```text
 
 /opt/docker-apps/\<application-name>/db-credentials.env
 
-\`\`\`
+```
 
 berisi credential database dan harus dijaga:
 
-\`\`\`text
+```text
 
 root\:root
 
 0600
 
-\`\`\`
+```
 
 Jangan commit file tersebut ke Git.
 
@@ -2282,19 +2282,19 @@ Jangan commit file tersebut ke Git.
 
 Setiap aplikasi mendapatkan network sendiri:
 
-\`\`\`text
+```text
 
 \<application-name>-network
 
-\`\`\`
+```
 
 Network menggunakan:
 
-\`\`\`text
+```text
 
 driver: bridge
 
-\`\`\`
+```
 
 Generator membaca subnet dan gateway aktual dari Docker setelah network dibuat.
 
@@ -2314,11 +2314,11 @@ Hal ini menjaga runtime image tetap fokus pada PHP-FPM dan mengurangi komponen y
 
 **# Project Goals**
 
-Project \`docker-php\` bertujuan menyediakan standar deployment PHP-FPM untuk server yang menjalankan banyak aplikasi web.
+Project `docker-php` bertujuan menyediakan standar deployment PHP-FPM untuk server yang menjalankan banyak aplikasi web.
 
 Target:
 
-\`\`\`text
+```text
 
 Consistency
 
@@ -2346,7 +2346,7 @@ Maintainability
 
 Scalability
 
-\`\`\`
+```
 
 **---**
 
@@ -2354,19 +2354,19 @@ Scalability
 
 Current release:
 
-\`\`\`text
+```text
 
 1.2.0
 
-\`\`\`
+```
 
 Release date:
 
-\`\`\`text
+```text
 
 2026-09-19
 
-\`\`\`
+```
 
 Major changes in 1.2.0:
 

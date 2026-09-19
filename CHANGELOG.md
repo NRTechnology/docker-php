@@ -43,15 +43,15 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Standardized PHP-FPM Docker image naming:
 
-  - \\\`local/php:7.4\\\`
+  - \\`local/php:7.4\\`
 
-  - \\\`local/php:8.2\\\`
+  - \\`local/php:8.2\\`
 
-  - \\\`local/php:8.3\\\`
+  - \\`local/php:8.3\\`
 
-  - \\\`local/php:8.4\\\`
+  - \\`local/php:8.4\\`
 
-  - \\\`local/php:8.5\\\`
+  - \\`local/php:8.5\\`
 
 \\- Added framework-aware application generation for:
 
@@ -67,9 +67,9 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Added automatic creation of application directories:
 
-  - \\\`/opt/docker-apps/\\\<application-name>\\\`
+  - \\`/opt/docker-apps/\\\<application-name>\\`
 
-  - \\\`/var/apps/\\\<application-name>\\\`
+  - \\`/var/apps/\\\<application-name>\\`
 
 \\- Added automatic creation of:
 
@@ -95,11 +95,11 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Added automatic database client detection:
 
-  - \\\`mariadb\\\` is preferred when available.
+  - \\`mariadb\\` is preferred when available.
 
-  - \\\`mysql\\\` is used when the MariaDB client is not available.
+  - \\`mysql\\` is used when the MariaDB client is not available.
 
-\\- Added automatic database creation by \\\`create-php-app.sh\\\`.
+\\- Added automatic database creation by \\`create-php-app.sh\\`.
 
 \\- Added automatic database username creation.
 
@@ -109,13 +109,13 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Added automatic database credentials file generation:
 
-  - \\\`/opt/docker-apps/\\\<application-name>/db-credentials.env\\\`
+  - \\`/opt/docker-apps/\\\<application-name>/db-credentials.env\\`
 
 \\- Database credentials file permissions are restricted to:
 
-  - owner: \\\`root\\\`
+  - owner: \\`root\\`
 
-  - permission: \\\`0600\\\`
+  - permission: \\`0600\\`
 
 \\- Added automatic restriction of the database user's allowed host based on the actual Docker network subnet.
 
@@ -123,19 +123,19 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Application database configuration uses:
 
-  - \\\`DB\\\_CONNECTION=mysql\\\`
+  - \\`DB\\\_CONNECTION=mysql\\`
 
-  - \\\`DB\\\_HOST=\\\<docker-gateway>\\\`
+  - \\`DB\\\_HOST=\\\<docker-gateway>\\`
 
-  - \\\`DB\\\_PORT=3306\\\`
+  - \\`DB\\\_PORT=3306\\`
 
-\\- \\\`DB\\\_CONNECTION=mysql\\\` is retained because the Laravel database driver name is \\\`mysql\\\` for both MySQL and MariaDB.
+\\- \\`DB\\\_CONNECTION=mysql\\` is retained because the Laravel database driver name is \\`mysql\\` for both MySQL and MariaDB.
 
 **\*\*### Requirement Installation\*\***
 
 \\- Added standardized requirement checking and installation through:
 
-  \\\`scripts/check-requirements.sh\\\`
+  \\`scripts/check-requirements.sh\\`
 
 \\- Added automatic detection and installation support for:
 
@@ -177,11 +177,11 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Application network names follow:
 
-  \\\`\\\<application-name>-network\\\`
+  \\`\\\<application-name>-network\\`
 
 \\- Docker network configuration remains based on:
 
-  \\\`driver: bridge\\\`
+  \\`driver: bridge\\`
 
 \\- The application generator creates the Docker network before Docker Compose deployment.
 
@@ -191,9 +191,9 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- PHP-FPM containers use:
 
-  - \\\`read\\\_only: true\\\`
+  - \\`read\\\_only: true\\`
 
-  - \\\`no-new-privileges\\\:true\\\`
+  - \\`no-new-privileges\\\:true\\`
 
   - tmpfs for temporary runtime data
 
@@ -221,15 +221,15 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Socket naming convention:
 
-  \\\`/run/php/\\\<application-name>.sock\\\`
+  \\`/run/php/\\\<application-name>.sock\\`
 
 \\- Standardized socket permissions:
 
-  - owner: \\\`www-data\\\`
+  - owner: \\`www-data\\`
 
-  - group: \\\`www-data\\\`
+  - group: \\`www-data\\`
 
-  - mode: \\\`0660\\\`
+  - mode: \\`0660\\`
 
 \\- Standardized PHP-FPM process management:
 
@@ -237,7 +237,7 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
   - configurable worker limits
 
-  - worker recycling using \\\`pm.max\\\_requests\\\`
+  - worker recycling using \\`pm.max\\\_requests\\`
 
   - request termination timeout
 
@@ -251,37 +251,37 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Laravel document root:
 
-  \\\`/var/apps/\\\<application-name>/htdocs/public\\\`
+  \\`/var/apps/\\\<application-name>/htdocs/public\\`
 
 \\- Writable Laravel directories:
 
-  - \\\`/var/apps/\\\<application-name>/data/  - \\\`/var/apps/\\\<application-name>/data/storage-app\\\`
+  - \\`/var/apps/\\\<application-name>/data/  - \\`/var/apps/\\\<application-name>/data/storage-app\\`
 
-  - \\\`/var/apps/\\\<application-name>/data/storage-framework\\\`
+  - \\`/var/apps/\\\<application-name>/data/storage-framework\\`
 
-  - \\\`/var/apps/\\\<application-name>/data/storage-logs\\\`
+  - \\`/var/apps/\\\<application-name>/data/storage-logs\\`
 
-  - \\\`/var/apps/\\\<application-name>/data/bootstrap-cache\\\`
+  - \\`/var/apps/\\\<application-name>/data/bootstrap-cache\\`
 
 \\- Container mount points:
 
-  - \\\`/var/www/html/storage/app\\\`
+  - \\`/var/www/html/storage/app\\`
 
-  - \\\`/var/www/html/storage/framework\\\`
+  - \\`/var/www/html/storage/framework\\`
 
-  - \\\`/var/www/html/storage/logs\\\`
+  - \\`/var/www/html/storage/logs\\`
 
-  - \\\`/var/www/html/bootstrap/cache\\\`
+  - \\`/var/www/html/bootstrap/cache\\`
 
 \\- Laravel application source code is mounted read-only.
 
-\\- Laravel \\\`vendor\\\` dependencies are stored separately from the application source:
+\\- Laravel \\`vendor\\` dependencies are stored separately from the application source:
 
-  \\\`/var/apps/\\\<application-name>/data/vendor\\\`
+  \\`/var/apps/\\\<application-name>/data/vendor\\`
 
-\\- The \\\`vendor\\\` directory is mounted read-write to:
+\\- The \\`vendor\\` directory is mounted read-write to:
 
-  \\\`/var/www/html/vendor\\\`
+  \\`/var/www/html/vendor\\`
 
 \\- Composer is provided separately and is not included in the PHP-FPM runtime image.
 
@@ -293,21 +293,21 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- CodeIgniter 4 document root:
 
-  \\\`/var/apps/\\\<application-name>/htdocs/public\\\`
+  \\`/var/apps/\\\<application-name>/htdocs/public\\`
 
 \\- CI4 writable directory:
 
-  \\\`/var/apps/\\\<application-name>/data/writable\\\`
+  \\`/var/apps/\\\<application-name>/data/writable\\`
 
 \\- Standard writable subdirectories:
 
-  - \\\`cache\\\`
+  - \\`cache\\`
 
-  - \\\`logs\\\`
+  - \\`logs\\`
 
-  - \\\`session\\\`
+  - \\`session\\`
 
-  - \\\`uploads\\\`
+  - \\`uploads\\`
 
 \\- PHP execution is blocked inside the writable directory.
 
@@ -315,21 +315,21 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Generic PHP document root:
 
-  \\\`/var/apps/\\\<application-name>/htdocs\\\`
+  \\`/var/apps/\\\<application-name>/htdocs\\`
 
 \\- Generic writable directory:
 
-  \\\`/var/apps/\\\<application-name>/data/writable\\\`
+  \\`/var/apps/\\\<application-name>/data/writable\\`
 
 \\- Standard writable subdirectories:
 
-  - \\\`cache\\\`
+  - \\`cache\\`
 
-  - \\\`logs\\\`
+  - \\`logs\\`
 
-  - \\\`session\\\`
+  - \\`session\\`
 
-  - \\\`uploads\\\`
+  - \\`uploads\\`
 
 \\- PHP execution is blocked inside the writable data directory.
 
@@ -339,7 +339,7 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Standardized PHP-FPM Unix socket integration.
 
-\\- Added \\\`try\\\_files\\\` handling for application routing.
+\\- Added \\`try\\\_files\\` handling for application routing.
 
 \\- Added security headers.
 
@@ -349,71 +349,71 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Protected file extensions include:
 
-  - \\\`.env\\\`
+  - \\`.env\\`
 
-  - \\\`.ini\\\`
+  - \\`.ini\\`
 
-  - \\\`.log\\\`
+  - \\`.log\\`
 
-  - \\\`.sql\\\`
+  - \\`.sql\\`
 
-  - \\\`.bak\\\`
+  - \\`.bak\\`
 
-  - \\\`.backup\\\`
+  - \\`.backup\\`
 
-  - \\\`.old\\\`
+  - \\`.old\\`
 
-  - \\\`.orig\\\`
+  - \\`.orig\\`
 
-  - \\\`.save\\\`
+  - \\`.save\\`
 
-  - \\\`.swp\\\`
+  - \\`.swp\\`
 
 \\- Added PHP execution restrictions for writable application directories.
 
 \\- Added automatic Nginx configuration validation using:
 
-  \\\`nginx -t\\\`
+  \\`nginx -t\\`
 
 \\- Added automatic Nginx site enablement through:
 
-  \\\`/etc/nginx/sites-enabled\\\`
+  \\`/etc/nginx/sites-enabled\\`
 
 **\*\*### Application Generator\*\***
 
 \\- Updated application generator usage to:
 
-  \\\`./create-php-app.sh \\\<app-name> \\\<php-version> \\\<framework> \\\<domain-name>\\\`
+  \\`./create-php-app.sh \\\<app-name> \\\<php-version> \\\<framework> \\\<domain-name>\\`
 
 \\- Supported framework values:
 
-  - \\\`laravel\\\`
+  - \\`laravel\\`
 
-  - \\\`ci\\\`
+  - \\`ci\\`
 
-  - \\\`generic\\\`
+  - \\`generic\\`
 
 \\- Supported PHP versions:
 
-  - \\\`7.4\\\`
+  - \\`7.4\\`
 
-  - \\\`8.2\\\`
+  - \\`8.2\\`
 
-  - \\\`8.3\\\`
+  - \\`8.3\\`
 
-  - \\\`8.4\\\`
+  - \\`8.4\\`
 
-  - \\\`8.5\\\`
+  - \\`8.5\\`
 
 \\- Example commands:
 
-  \\\`./create-php-app.sh myapp 8.2 laravel myapp.example.go.id\\\`
+  \\`./create-php-app.sh myapp 8.2 laravel myapp.example.go.id\\`
 
-  \\\`./create-php-app.sh myapp2 8.4 ci myapp2.example.go.id\\\`
+  \\`./create-php-app.sh myapp2 8.4 ci myapp2.example.go.id\\`
 
-  \\\`./create-php-app.sh myapp3 8.5 generic myapp3.example.go.id\\\`
+  \\`./create-php-app.sh myapp3 8.5 generic myapp3.example.go.id\\`
 
-  \\\`./create-php-app.sh legacy-app 7.4 generic legacy.example.go.id\\\`
+  \\`./create-php-app.sh legacy-app 7.4 generic legacy.example.go.id\\`
 
 \\- Added validation for:
 
@@ -441,11 +441,11 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Added automatic Docker Compose configuration validation using:
 
-  \\\`docker compose config\\\`
+  \\`docker compose config\\`
 
 \\- The application generator does not automatically execute:
 
-  \\\`docker compose up -d\\\`
+  \\`docker compose up -d\\`
 
   This allows the administrator to review the generated configuration before starting the application.
 
@@ -455,7 +455,7 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Writable application data is separated from application source code.
 
-\\- Containers use \\\`no-new-privileges\\\`.
+\\- Containers use \\`no-new-privileges\\`.
 
 \\- Containers use a read-only root filesystem where practical.
 
@@ -463,19 +463,19 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Runtime writable locations are explicitly mounted.
 
-\\- PHP \\\`display\\\_errors\\\` is disabled.
+\\- PHP \\`display\\\_errors\\` is disabled.
 
 \\- PHP errors are logged to container stderr.
 
-\\- \\\`allow\\\_url\\\_include\\\` is disabled.
+\\- \\`allow\\\_url\\\_include\\` is disabled.
 
-\\- \\\`cgi.fix\\\_pathinfo\\\` is disabled.
+\\- \\`cgi.fix\\\_pathinfo\\` is disabled.
 
 \\- PHP sessions use strict mode.
 
-\\- PHP session cookies use \\\`HttpOnly\\\`.
+\\- PHP session cookies use \\`HttpOnly\\`.
 
-\\- PHP session cookies are configured with \\\`Secure\\\`.
+\\- PHP session cookies are configured with \\`Secure\\`.
 
 \\- Nginx blocks hidden files.
 
@@ -485,7 +485,7 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Database credentials are stored outside the application source tree.
 
-\\- Database credential files use permission \\\`0600\\\`.
+\\- Database credential files use permission \\`0600\\`.
 
 \\- Database users are restricted to the application's database.
 
@@ -493,7 +493,7 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- The project deliberately does not use:
 
-  \\\`cap\\\_drop: ALL\\\`
+  \\`cap\\\_drop: ALL\\`
 
   because of runtime compatibility considerations observed in production environments.
 
@@ -505,11 +505,11 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Changed supported PHP versions from:
 
-  \\\`7.4 | 8.3 | 8.4 | 8.5\\\`
+  \\`7.4 | 8.3 | 8.4 | 8.5\\`
 
   to:
 
-  \\\`7.4 | 8.2 | 8.3 | 8.4 | 8.5\\\`
+  \\`7.4 | 8.2 | 8.3 | 8.4 | 8.5\\`
 
 \\- Changed the application generator to automatically create:
 
@@ -529,27 +529,27 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Standardized application container naming:
 
-  \\\`\\\<application-name>-php\\\`
+  \\`\\\<application-name>-php\\`
 
 \\- Standardized Docker network naming:
 
-  \\\`\\\<application-name>-network\\\`
+  \\`\\\<application-name>-network\\`
 
 \\- Standardized timezone to:
 
-  \\\`Asia/Jakarta\\\`
+  \\`Asia/Jakarta\\`
 
 \\- Standardized repository paths:
 
-  - Repository: \\\`/opt/docker-php\\\`
+  - Repository: \\`/opt/docker-php\\`
 
-  - Application Docker configuration: \\\`/opt/docker-apps\\\`
+  - Application Docker configuration: \\`/opt/docker-apps\\`
 
-  - Application source/data: \\\`/var/apps\\\`
+  - Application source/data: \\`/var/apps\\`
 
 **\*\*### Removed\*\***
 
-\\- Removed the requirement for \\\`/run/mysqld\\\` socket mounting between the PHP-FPM container and host database.
+\\- Removed the requirement for \\`/run/mysqld\\` socket mounting between the PHP-FPM container and host database.
 
 \\- Database communication now uses TCP through the Docker network gateway.
 
@@ -557,15 +557,15 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 **\*\*### Fixed\*\***
 
-\\- Fixed database password generation under Bash \\\`set -o pipefail\\\`.
+\\- Fixed database password generation under Bash \\`set -o pipefail\\`.
 
-\\- Password generation no longer relies on a pipeline that may fail because of \\\`SIGPIPE\\\` from \\\`head\\\`.
+\\- Password generation no longer relies on a pipeline that may fail because of \\`SIGPIPE\\` from \\`head\\`.
 
 \\- Database passwords are now generated using:
 
-  - \\\`openssl rand -hex\\\`
+  - \\`openssl rand -hex\\`
 
-  - or \\\`/dev/urandom\\\` as fallback.
+  - or \\`/dev/urandom\\` as fallback.
 
 \\- Improved validation of generated database passwords.
 
@@ -587,9 +587,9 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Database root accounts should remain restricted to trusted/local administration.
 
-\\- \\\`scripts/check-requirements.sh\\\` should not automatically overwrite an existing production database configuration.
+\\- \\`scripts/check-requirements.sh\\` should not automatically overwrite an existing production database configuration.
 
-\\- \\\`mariadb-secure-installation\\\` remains an interactive security hardening step and is not executed automatically.
+\\- \\`mariadb-secure-installation\\` remains an interactive security hardening step and is not executed automatically.
 
 \\- The requirement installation process does not automatically modify:
 
@@ -619,11 +619,11 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 \\- Application dependencies should be installed separately from the production PHP-FPM runtime container.
 
-\\- \\\`session.cookie\\\_secure = 1\\\` assumes that the application is served through HTTPS.
+\\- \\`session.cookie\\\_secure = 1\\` assumes that the application is served through HTTPS.
 
 \\- Redis extension compatibility should be tested against the target application before production deployment.
 
-\\- The generated Docker network uses \\\`driver: bridge\\\`.
+\\- The generated Docker network uses \\`driver: bridge\\`.
 
 \\- Docker Compose may report a warning when the application network was created by the generator rather than by Compose itself. The network remains intentionally managed as a standard bridge network by the generator.
 
@@ -631,7 +631,7 @@ and this project follows [Semantic Versioning]\\(https\\://semver.org/).
 
 **\*\*### Added\*\***
 
-\\- Initial production-ready structure for the \\\`docker-php\\\` repository.
+\\- Initial production-ready structure for the \\`docker-php\\` repository.
 
 \\- Standardized PHP-FPM Docker image templates.
 
