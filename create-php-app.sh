@@ -188,6 +188,20 @@ fi
 
 log "Database client : ${DATABASE_CLIENT}"
 
+# ==============================================================================
+# VERIFY DATABASE ROOT LOGIN WITHOUT PASSWORD
+# ==============================================================================
+
+log "Memeriksa root MySQL/MariaDB tanpa password..."
+
+# Jangan gunakan MYSQL_PWD agar pemeriksaan benar-benar memastikan
+# root dapat login tanpa password.
+if ! env -u MYSQL_PWD "$DATABASE_CLIENT" -u root -e "SELECT 1;" >/dev/null 2>&1; then
+    die "User root MySQL/MariaDB tidak dapat login tanpa password. Pastikan root menggunakan akses socket/akun tanpa password."
+fi
+
+log "Root MySQL/MariaDB dapat login tanpa password."
+
 
 # ==============================================================================
 # APPLICATION PATHS
@@ -261,6 +275,84 @@ fi
 if [[ "$PHP_VERSION" == "7.4" ]]; then
     warn "PHP 7.4 adalah versi legacy/EOL."
 fi
+
+
+# ==============================================================================
+# DOCKER NETWORK
+# ==============================================================================
+
+log "Membuat Docker network..."
+
+if docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
+    die "Docker network sudah ada: $NETWORK_NAME"
+fi
+
+docker network create \
+    --driver bridge \
+    "$NETWORK_NAME" >/dev/null \
+    || die "Gagal membuat Docker network: $NETWORK_NAME"
+
+log "Docker network berhasil dibuat: $NETWORK_NAME"
+
+
+
+# ==============================================================================
+# GET ACTUAL DOCKER NETWORK INFORMATION
+# ==============================================================================
+
+# Ambil subnet aktual yang diberikan Docker.
+NETWORK_SUBNET="$(
+    docker network inspect "$NETWORK_NAME" \
+        --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
+)"
+
+# Ambil gateway aktual yang diberikan Docker.
+NETWORK_GATEWAY="$(
+    docker network inspect "$NETWORK_NAME" \
+        --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+)"
+
+[[ -n "$NETWORK_SUBNET" ]] \
+    || die "Subnet Docker network tidak dapat ditentukan."
+
+[[ -n "$NETWORK_GATEWAY" ]] \
+    || die "Gateway Docker network tidak dapat ditentukan."
+
+log "Docker subnet  : $NETWORK_SUBNET"
+log "Docker gateway : $NETWORK_GATEWAY"
+
+
+# ==============================================================================
+# GENERATE DATABASE HOST PATTERN
+# ==============================================================================
+
+NETWORK_CIDR="${NETWORK_SUBNET#*/}"
+NETWORK_BASE="${NETWORK_SUBNET%/*}"
+
+IFS='.' read -r OCT1 OCT2 OCT3 OCT4 <<< "$NETWORK_BASE"
+
+case "$NETWORK_CIDR" in
+
+    8)
+        DB_HOST_PATTERN="${OCT1}.%"
+        ;;
+
+    16)
+        DB_HOST_PATTERN="${OCT1}.${OCT2}.%"
+        ;;
+
+    24)
+        DB_HOST_PATTERN="${OCT1}.${OCT2}.${OCT3}.%"
+        ;;
+
+    *)
+        die "Subnet Docker tidak didukung untuk automatic database host restriction: ${NETWORK_SUBNET}"
+        ;;
+
+esac
+
+log "Database allowed host: ${DB_HOST_PATTERN}"
+
 
 
 # ==============================================================================
@@ -432,82 +524,6 @@ if [[ "$FRAMEWORK" == "laravel" ]]; then
 
     log "Composer tersedia: ${APP_COMPOSER}/composer"
 fi
-
-
-# ==============================================================================
-# DOCKER NETWORK
-# ==============================================================================
-
-log "Membuat Docker network..."
-
-if docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
-    die "Docker network sudah ada: $NETWORK_NAME"
-fi
-
-docker network create \
-    --driver bridge \
-    "$NETWORK_NAME" >/dev/null \
-    || die "Gagal membuat Docker network: $NETWORK_NAME"
-
-log "Docker network berhasil dibuat: $NETWORK_NAME"
-
-
-# ==============================================================================
-# GET ACTUAL DOCKER NETWORK INFORMATION
-# ==============================================================================
-
-# Ambil subnet aktual yang diberikan Docker.
-NETWORK_SUBNET="$(
-    docker network inspect "$NETWORK_NAME" \
-        --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
-)"
-
-# Ambil gateway aktual yang diberikan Docker.
-NETWORK_GATEWAY="$(
-    docker network inspect "$NETWORK_NAME" \
-        --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
-)"
-
-[[ -n "$NETWORK_SUBNET" ]] \
-    || die "Subnet Docker network tidak dapat ditentukan."
-
-[[ -n "$NETWORK_GATEWAY" ]] \
-    || die "Gateway Docker network tidak dapat ditentukan."
-
-log "Docker subnet  : $NETWORK_SUBNET"
-log "Docker gateway : $NETWORK_GATEWAY"
-
-
-# ==============================================================================
-# GENERATE DATABASE HOST PATTERN
-# ==============================================================================
-
-NETWORK_CIDR="${NETWORK_SUBNET#*/}"
-NETWORK_BASE="${NETWORK_SUBNET%/*}"
-
-IFS='.' read -r OCT1 OCT2 OCT3 OCT4 <<< "$NETWORK_BASE"
-
-case "$NETWORK_CIDR" in
-
-    8)
-        DB_HOST_PATTERN="${OCT1}.%"
-        ;;
-
-    16)
-        DB_HOST_PATTERN="${OCT1}.${OCT2}.%"
-        ;;
-
-    24)
-        DB_HOST_PATTERN="${OCT1}.${OCT2}.${OCT3}.%"
-        ;;
-
-    *)
-        die "Subnet Docker tidak didukung untuk automatic database host restriction: ${NETWORK_SUBNET}"
-        ;;
-
-esac
-
-log "Database allowed host: ${DB_HOST_PATTERN}"
 
 
 # ==============================================================================
