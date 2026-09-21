@@ -841,30 +841,64 @@ fi
 section "CHECK LINUX MALWARE DETECT"
 
 if command -v maldet >/dev/null 2>&1; then
+
     success "Linux Malware Detect (LMD) sudah tersedia."
     maldet --version 2>/dev/null | head -n 2 || true
+
 else
+
     info "Linux Malware Detect (LMD) belum tersedia."
-    info "Mengunduh installer resmi LMD..."
+    info "Mengunduh source LMD lengkap dari repository resmi..."
 
     LMD_TMP="$(mktemp -d)"
-    trap 'rm -rf "${LMD_TMP}"' EXIT
 
     curl -fsSL \
-        "https://raw.githubusercontent.com/rfxn/linux-malware-detect/master/install.sh" \
-        -o "${LMD_TMP}/install.sh"
+        "https://github.com/rfxn/linux-malware-detect/archive/refs/heads/master.tar.gz" \
+        -o "${LMD_TMP}/linux-malware-detect.tar.gz"
 
-    chmod 0755 "${LMD_TMP}/install.sh"
-    "${LMD_TMP}/install.sh"
+    tar -xzf \
+        "${LMD_TMP}/linux-malware-detect.tar.gz" \
+        -C "${LMD_TMP}"
+
+    LMD_SOURCE_DIR="$(
+        find "${LMD_TMP}" \
+            -maxdepth 1 \
+            -type d \
+            -name 'linux-malware-detect-*' \
+            -print -quit
+    )"
+
+    if [[ -z "${LMD_SOURCE_DIR}" ||
+          ! -f "${LMD_SOURCE_DIR}/install.sh" ||
+          ! -f "${LMD_SOURCE_DIR}/files/internals/pkg_lib.sh" ]]; then
+
+        error "Source LMD tidak lengkap atau struktur repository berubah."
+        rm -rf "${LMD_TMP}"
+        exit 1
+    fi
+
+    info "Source LMD ditemukan:"
+    info "${LMD_SOURCE_DIR}"
+
+    chmod 0755 "${LMD_SOURCE_DIR}/install.sh"
+
+    info "Menjalankan installer LMD..."
+
+    (
+        cd "${LMD_SOURCE_DIR}"
+        ./install.sh
+    )
 
     rm -rf "${LMD_TMP}"
 
     if command -v maldet >/dev/null 2>&1; then
         success "Linux Malware Detect (LMD) berhasil diinstall."
+        maldet --version 2>/dev/null | head -n 2 || true
     else
-        error "LMD berhasil dijalankan installernya tetapi command maldet tidak ditemukan."
+        error "Installer LMD selesai tetapi command maldet tidak ditemukan."
         exit 1
     fi
+
 fi
 
 # ------------------------------------------------------------
