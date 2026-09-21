@@ -7,10 +7,17 @@ set -Eeuo pipefail
 # System Requirements Checker & Installer
 #
 # Checks and installs:
+#   - Ubuntu/Debian APT requirements
 #   - Nginx
 #   - Docker Engine
 #   - Docker Compose Plugin
 #   - MariaDB Server
+#   - ClamAV
+#   - Linux Malware Detect (LMD)
+#   - YARA
+#
+# Security tools are installed first, then the administrator is asked
+# whether each tool should be enabled automatically.
 #
 # MariaDB Configuration:
 #   - bind-address = 0.0.0.0
@@ -26,6 +33,10 @@ set -Eeuo pipefail
 # ============================================================
 
 SCRIPT_NAME="$(basename "$0")"
+
+# Repository root and backup directory
+APP_ROOT="/opt/docker-php"
+APP_BACKUP="${APP_ROOT}/backup"
 
 # ------------------------------------------------------------
 # Colors
@@ -134,6 +145,91 @@ case "${ARCH}" in
 esac
 
 # ------------------------------------------------------------
+# Ubuntu Main Repository
+# ------------------------------------------------------------
+
+configure_ubuntu_repository() {
+    if [[ "${OS_ID}" != "ubuntu" ]]; then
+        info "OS bukan Ubuntu. Repository Debian tidak diubah."
+        return
+    fi
+
+    section "UBUNTU MAIN REPOSITORY"
+
+    local codename="${OS_CODENAME}"
+    local arch
+    local ubuntu_sources="/etc/apt/sources.list.d/ubuntu.sources"
+    local legacy_sources="/etc/apt/sources.list"
+    local backup_dir="${APP_BACKUP}/apt"
+    local timestamp
+    timestamp="$(date +%Y%m%d-%H%M%S)"
+
+    if [[ -z "${codename}" ]]; then
+        error "Ubuntu codename tidak dapat dideteksi."
+        exit 1
+    fi
+
+    mkdir -p "${backup_dir}"
+
+    info "Ubuntu codename : ${codename}"
+    info "Menggunakan official Ubuntu main archive."
+
+    # Ubuntu 24.04+ uses deb822 ubuntu.sources.
+    if [[ -f "${ubuntu_sources}" ]]; then
+        cp -a "${ubuntu_sources}" \
+            "${backup_dir}/ubuntu.sources.${timestamp}.bak"
+        success "Backup repository Ubuntu dibuat:"
+        info "${backup_dir}/ubuntu.sources.${timestamp}.bak"
+    fi
+
+    # Preserve legacy sources.list before changing it.
+    if [[ -f "${legacy_sources}" ]]; then
+        cp -a "${legacy_sources}" \
+            "${backup_dir}/sources.list.${timestamp}.bak"
+    fi
+
+    if [[ -f "${ubuntu_sources}" ]] || dpkg --compare-versions "${OS_VERSION}" ge "24.04"; then
+        cat > "${ubuntu_sources}" <<EOF
+Types: deb
+URIs: http://archive.ubuntu.com/ubuntu
+Suites: ${codename} ${codename}-updates ${codename}-backports
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb
+URIs: http://security.ubuntu.com/ubuntu
+Suites: ${codename}-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
+
+        # Prevent duplicate/old Ubuntu entries in legacy sources.list
+        # from continuing to use an Indonesian mirror.
+        if [[ -f "${legacy_sources}" ]]; then
+            sed -i -E \
+                '/^[[:space:]]*deb(-src)?[[:space:]]+https?:\/\/([^[:space:]]+\.)?ubuntu\.com\/ubuntu/d' \
+                "${legacy_sources}"
+            sed -i -E \
+                '/^[[:space:]]*deb(-src)?[[:space:]]+https?:\/\/[^[:space:]]*ubuntu\.com\/ubuntu/d' \
+                "${legacy_sources}"
+        fi
+    else
+        cat > "${legacy_sources}" <<EOF
+deb http://archive.ubuntu.com/ubuntu ${codename} main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu ${codename}-updates main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu ${codename}-backports main restricted universe multiverse
+deb http://security.ubuntu.com/ubuntu ${codename}-security main restricted universe multiverse
+EOF
+    fi
+
+    success "Repository Ubuntu diarahkan ke official archive."
+    info "Main archive : http://archive.ubuntu.com/ubuntu"
+    info "Security     : http://security.ubuntu.com/ubuntu"
+}
+
+configure_ubuntu_repository
+
+# ------------------------------------------------------------
 # APT Update
 # ------------------------------------------------------------
 
@@ -141,7 +237,11 @@ section "APT PACKAGE INFORMATION"
 
 info "Updating APT package index..."
 
-apt-get update
+if ! apt-get update; then
+    error "APT repository tidak dapat diakses."
+    error "Periksa koneksi jaringan dan konfigurasi repository."
+    exit 1
+fi
 
 success "APT package index berhasil diperbarui."
 
@@ -699,6 +799,197 @@ if command -v ss >/dev/null 2>&1; then
 fi
 
 # ------------------------------------------------------------
+# CLAMAV
+# ------------------------------------------------------------
+
+section "CHECK CLAMAV"
+
+if command -v clamscan >/dev/null 2>&1; then
+    success "ClamAV sudah tersedia."
+    clamscan --version | head -n 1 || true
+else
+    info "ClamAV belum tersedia."
+    info "Menginstall ClamAV, daemon, dan FreshClam..."
+
+    apt-get install -y \
+        clamav \
+        clamav-daemon \
+        clamav-freshclam
+
+    success "ClamAV berhasil diinstall."
+fi
+
+# Ensure the signature database is available, but do not start the
+# scanning daemon automatically before the administrator decides.
+if command -v freshclam >/dev/null 2>&1; then
+    info "Memastikan database signature ClamAV tersedia..."
+
+    systemctl stop clamav-freshclam 2>/dev/null || true
+
+    if ! freshclam --stdout >/tmp/docker-php-freshclam.log 2>&1; then
+        warning "Update signature ClamAV gagal. Lihat:"
+        warning "/tmp/docker-php-freshclam.log"
+    else
+        success "Database signature ClamAV diperbarui."
+    fi
+fi
+
+# ------------------------------------------------------------
+# LINUX MALWARE DETECT (LMD)
+# ------------------------------------------------------------
+
+section "CHECK LINUX MALWARE DETECT"
+
+if command -v maldet >/dev/null 2>&1; then
+    success "Linux Malware Detect (LMD) sudah tersedia."
+    maldet --version 2>/dev/null | head -n 2 || true
+else
+    info "Linux Malware Detect (LMD) belum tersedia."
+    info "Mengunduh installer resmi LMD..."
+
+    LMD_TMP="$(mktemp -d)"
+    trap 'rm -rf "${LMD_TMP}"' EXIT
+
+    curl -fsSL \
+        "https://raw.githubusercontent.com/rfxn/linux-malware-detect/master/install.sh" \
+        -o "${LMD_TMP}/install.sh"
+
+    chmod 0755 "${LMD_TMP}/install.sh"
+    "${LMD_TMP}/install.sh"
+
+    rm -rf "${LMD_TMP}"
+
+    if command -v maldet >/dev/null 2>&1; then
+        success "Linux Malware Detect (LMD) berhasil diinstall."
+    else
+        error "LMD berhasil dijalankan installernya tetapi command maldet tidak ditemukan."
+        exit 1
+    fi
+fi
+
+# ------------------------------------------------------------
+# YARA
+# ------------------------------------------------------------
+
+section "CHECK YARA"
+
+if command -v yara >/dev/null 2>&1; then
+    success "YARA sudah tersedia."
+    yara --version || true
+else
+    info "YARA belum tersedia."
+    info "Menginstall YARA dari repository Ubuntu..."
+
+    apt-get install -y yara
+
+    success "YARA berhasil diinstall."
+fi
+
+# ------------------------------------------------------------
+# SECURITY TOOL ENABLEMENT
+# ------------------------------------------------------------
+
+section "SECURITY TOOL ENABLEMENT"
+
+CLAMAV_ENABLED="NO"
+LMD_ENABLED="NO"
+YARA_ENABLED="NO"
+
+echo
+read -r -p "Aktifkan ClamAV otomatis? [y/N]: " ENABLE_CLAMAV
+case "${ENABLE_CLAMAV,,}" in
+    y|yes)
+        CLAMAV_ENABLED="YES"
+        ;;
+    *)
+        CLAMAV_ENABLED="NO"
+        ;;
+esac
+
+echo
+read -r -p "Aktifkan LMD otomatis? [y/N]: " ENABLE_LMD
+case "${ENABLE_LMD,,}" in
+    y|yes)
+        LMD_ENABLED="YES"
+        ;;
+    *)
+        LMD_ENABLED="NO"
+        ;;
+esac
+
+echo
+read -r -p "Aktifkan YARA melalui LMD? [y/N]: " ENABLE_YARA
+case "${ENABLE_YARA,,}" in
+    y|yes)
+        YARA_ENABLED="YES"
+        ;;
+    *)
+        YARA_ENABLED="NO"
+        ;;
+esac
+
+# ClamAV:
+# YES = enable FreshClam and ClamAV daemon.
+# NO  = keep the packages installed but do not run the services.
+if [[ "${CLAMAV_ENABLED}" == "YES" ]]; then
+    info "Mengaktifkan ClamAV daemon dan FreshClam..."
+
+    systemctl enable --now clamav-freshclam 2>/dev/null || true
+    systemctl enable --now clamav-daemon 2>/dev/null || true
+
+    success "ClamAV diaktifkan."
+else
+    info "ClamAV tetap terinstall tetapi tidak diaktifkan."
+
+    systemctl disable --now clamav-daemon 2>/dev/null || true
+    systemctl disable --now clamav-freshclam 2>/dev/null || true
+fi
+
+# LMD:
+# LMD's upstream installer installs cron/systemd integration. To honor
+# "install != enable", disable the service and daily scan when declined.
+if [[ -f /usr/local/maldetect/conf.maldet ]]; then
+    if [[ "${LMD_ENABLED}" == "YES" ]]; then
+        sed -i -E 's/^[[:space:]]*cron_daily_scan[[:space:]]*=.*/cron_daily_scan=1/' \
+            /usr/local/maldetect/conf.maldet
+        sed -i -E 's/^[[:space:]]*default_monitor_mode[[:space:]]*=.*/default_monitor_mode=""/' \
+            /usr/local/maldetect/conf.maldet || true
+
+        systemctl enable --now maldet.service 2>/dev/null || true
+        success "LMD diaktifkan."
+        info "Real-time monitoring LMD belum diarahkan ke directory aplikasi."
+    else
+        sed -i -E 's/^[[:space:]]*cron_daily_scan[[:space:]]*=.*/cron_daily_scan=0/' \
+            /usr/local/maldetect/conf.maldet
+
+        systemctl disable --now maldet.service 2>/dev/null || true
+        success "LMD tetap terinstall tetapi scanning otomatis dinonaktifkan."
+    fi
+fi
+
+# YARA is a scanning engine, not a standalone systemd service.
+# Its enablement here controls native YARA scanning from LMD.
+if [[ -f /usr/local/maldetect/conf.maldet ]]; then
+    if [[ "${YARA_ENABLED}" == "YES" ]]; then
+        if grep -Eq '^[[:space:]]*scan_yara[[:space:]]*=' /usr/local/maldetect/conf.maldet; then
+            sed -i -E 's/^[[:space:]]*scan_yara[[:space:]]*=.*/scan_yara=1/' \
+                /usr/local/maldetect/conf.maldet
+        else
+            printf '\nscan_yara=1\n' >> /usr/local/maldetect/conf.maldet
+        fi
+        success "YARA native scanning melalui LMD diaktifkan."
+    else
+        if grep -Eq '^[[:space:]]*scan_yara[[:space:]]*=' /usr/local/maldetect/conf.maldet; then
+            sed -i -E 's/^[[:space:]]*scan_yara[[:space:]]*=.*/scan_yara=0/' \
+                /usr/local/maldetect/conf.maldet
+        else
+            printf '\nscan_yara=0\n' >> /usr/local/maldetect/conf.maldet
+        fi
+        success "YARA tetap terinstall tetapi native scanning melalui LMD dinonaktifkan."
+    fi
+fi
+
+# ------------------------------------------------------------
 # FINAL CHECK
 # ------------------------------------------------------------
 
@@ -752,6 +1043,39 @@ else
     echo -e "${RED}REMOTE ACCESS${NC}"
 fi
 
+printf "%-20s : " "ClamAV"
+if command -v clamscan >/dev/null 2>&1; then
+    if [[ "${CLAMAV_ENABLED:-NO}" == "YES" ]]; then
+        echo -e "${GREEN}INSTALLED / ENABLED${NC}"
+    else
+        echo -e "${YELLOW}INSTALLED / DISABLED${NC}"
+    fi
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+printf "%-20s : " "LMD"
+if command -v maldet >/dev/null 2>&1; then
+    if [[ "${LMD_ENABLED:-NO}" == "YES" ]]; then
+        echo -e "${GREEN}INSTALLED / ENABLED${NC}"
+    else
+        echo -e "${YELLOW}INSTALLED / DISABLED${NC}"
+    fi
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
+printf "%-20s : " "YARA"
+if command -v yara >/dev/null 2>&1; then
+    if [[ "${YARA_ENABLED:-NO}" == "YES" ]]; then
+        echo -e "${GREEN}INSTALLED / ENABLED${NC}"
+    else
+        echo -e "${YELLOW}INSTALLED / DISABLED${NC}"
+    fi
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
 # ------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------
@@ -779,8 +1103,26 @@ echo "MariaDB:"
 mariadb --version || true
 
 echo
+echo "ClamAV:"
+clamscan --version 2>/dev/null | head -n 1 || echo "  Tidak tersedia"
+
+echo
+echo "LMD:"
+maldet --version 2>/dev/null | head -n 1 || echo "  Tidak tersedia"
+
+echo
+echo "YARA:"
+yara --version 2>/dev/null || echo "  Tidak tersedia"
+
+echo
 
 success "Pemeriksaan dependency selesai."
+
+echo
+echo "Security tools:"
+echo "  ClamAV : ${CLAMAV_ENABLED:-NO}"
+echo "  LMD    : ${LMD_ENABLED:-NO}"
+echo "  YARA   : ${YARA_ENABLED:-NO}"
 
 echo
 echo "MariaDB configuration:"
