@@ -903,6 +903,44 @@ else
 fi
 
 # ------------------------------------------------------------
+# LMD QUARANTINE
+# ------------------------------------------------------------
+
+section "LMD QUARANTINE"
+
+LMD_QUARANTINE="/usr/local/maldetect/quarantine"
+QUARANTINE_ALIAS="/opt/quarantine"
+
+# Keep LMD's native quarantine directory as the real storage location.
+# /opt/quarantine is only an administrative alias to that directory.
+mkdir -p "${LMD_QUARANTINE}"
+
+if [[ -L "${QUARANTINE_ALIAS}" ]]; then
+    CURRENT_TARGET="$(readlink "${QUARANTINE_ALIAS}")"
+
+    if [[ "${CURRENT_TARGET}" != "${LMD_QUARANTINE}" ]]; then
+        error "Symlink ${QUARANTINE_ALIAS} sudah ada tetapi target salah: ${CURRENT_TARGET}"
+        exit 1
+    fi
+
+    success "Quarantine alias sudah benar:"
+    info "${QUARANTINE_ALIAS} -> ${LMD_QUARANTINE}"
+
+elif [[ -e "${QUARANTINE_ALIAS}" ]]; then
+    error "${QUARANTINE_ALIAS} sudah ada tetapi bukan symlink."
+    error "Script tidak akan menghapus atau mengganti path tersebut secara otomatis."
+    exit 1
+
+else
+    ln -s "${LMD_QUARANTINE}" "${QUARANTINE_ALIAS}"
+    success "Quarantine alias dibuat:"
+    info "${QUARANTINE_ALIAS} -> ${LMD_QUARANTINE}"
+fi
+
+# LMD remains the owner of the native quarantine storage.
+chmod 0700 "${LMD_QUARANTINE}" 2>/dev/null || true
+
+# ------------------------------------------------------------
 # YARA
 # ------------------------------------------------------------
 
@@ -1033,6 +1071,18 @@ else
 fi
 
 # ------------------------------------------------------------
+# QUARANTINE VERIFICATION
+# ------------------------------------------------------------
+
+if [[ -L "${QUARANTINE_ALIAS}" &&
+      "$(readlink "${QUARANTINE_ALIAS}")" == "${LMD_QUARANTINE}" &&
+      -d "${LMD_QUARANTINE}" ]]; then
+    QUARANTINE_READY="YES"
+else
+    QUARANTINE_READY="NO"
+fi
+
+# ------------------------------------------------------------
 # FINAL CHECK
 # ------------------------------------------------------------
 
@@ -1108,6 +1158,13 @@ else
     echo -e "${RED}FAILED${NC}"
 fi
 
+printf "%-20s : " "LMD Quarantine"
+if [[ "${QUARANTINE_READY:-NO}" == "YES" ]]; then
+    echo -e "${GREEN}${QUARANTINE_ALIAS} -> ${LMD_QUARANTINE}${NC}"
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
 printf "%-20s : " "YARA"
 if command -v yara >/dev/null 2>&1; then
     if [[ "${YARA_INTEGRATED:-NO}" == "YES" ]]; then
@@ -1162,6 +1219,10 @@ echo
 success "Pemeriksaan dependency selesai."
 
 echo
+echo "Quarantine:"
+echo "  LMD Storage  : ${LMD_QUARANTINE}"
+echo "  Alias        : ${QUARANTINE_ALIAS} -> ${LMD_QUARANTINE}"
+
 echo "Security tools:"
 echo "  ClamAV : ${CLAMAV_ENABLED:-NO}"
 echo "  LMD    : ${LMD_ENABLED:-NO}"
