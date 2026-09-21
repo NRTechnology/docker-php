@@ -16,8 +16,9 @@ set -Eeuo pipefail
 #   - Linux Malware Detect (LMD)
 #   - YARA
 #
-# Security tools are installed first, then the administrator is asked
-# whether each tool should be enabled automatically.
+# Security tools are installed first. ClamAV and LMD can be enabled
+# automatically by the administrator. YARA is integrated into LMD
+# automatically and is not treated as a standalone service.
 #
 # MariaDB Configuration:
 #   - bind-address = 0.0.0.0
@@ -927,7 +928,7 @@ section "SECURITY TOOL ENABLEMENT"
 
 CLAMAV_ENABLED="NO"
 LMD_ENABLED="NO"
-YARA_ENABLED="NO"
+YARA_INTEGRATED="NO"
 
 echo
 read -r -p "Aktifkan ClamAV otomatis? [y/N]: " ENABLE_CLAMAV
@@ -948,17 +949,6 @@ case "${ENABLE_LMD,,}" in
         ;;
     *)
         LMD_ENABLED="NO"
-        ;;
-esac
-
-echo
-read -r -p "Aktifkan YARA melalui LMD? [y/N]: " ENABLE_YARA
-case "${ENABLE_YARA,,}" in
-    y|yes)
-        YARA_ENABLED="YES"
-        ;;
-    *)
-        YARA_ENABLED="NO"
         ;;
 esac
 
@@ -1001,26 +991,45 @@ if [[ -f /usr/local/maldetect/conf.maldet ]]; then
     fi
 fi
 
-# YARA is a scanning engine, not a standalone systemd service.
-# Its enablement here controls native YARA scanning from LMD.
-if [[ -f /usr/local/maldetect/conf.maldet ]]; then
-    if [[ "${YARA_ENABLED}" == "YES" ]]; then
-        if grep -Eq '^[[:space:]]*scan_yara[[:space:]]*=' /usr/local/maldetect/conf.maldet; then
-            sed -i -E 's/^[[:space:]]*scan_yara[[:space:]]*=.*/scan_yara=1/' \
-                /usr/local/maldetect/conf.maldet
-        else
-            printf '\nscan_yara=1\n' >> /usr/local/maldetect/conf.maldet
-        fi
-        success "YARA native scanning melalui LMD diaktifkan."
+# ------------------------------------------------------------
+# LMD + YARA INTEGRATION
+# ------------------------------------------------------------
+# YARA is not a standalone service. LMD invokes the YARA binary as
+# one of its native detection stages. Always enable this integration
+# when LMD and YARA are installed.
+
+if [[ -f /usr/local/maldetect/conf.maldet && -x "$(command -v yara 2>/dev/null || true)" ]]; then
+
+    info "Mengintegrasikan YARA dengan LMD..."
+
+    if grep -Eq '^[[:space:]]*scan_yara[[:space:]]*=' /usr/local/maldetect/conf.maldet; then
+        sed -i -E \
+            's/^[[:space:]]*scan_yara[[:space:]]*=.*/scan_yara=1/' \
+            /usr/local/maldetect/conf.maldet
     else
-        if grep -Eq '^[[:space:]]*scan_yara[[:space:]]*=' /usr/local/maldetect/conf.maldet; then
-            sed -i -E 's/^[[:space:]]*scan_yara[[:space:]]*=.*/scan_yara=0/' \
-                /usr/local/maldetect/conf.maldet
-        else
-            printf '\nscan_yara=0\n' >> /usr/local/maldetect/conf.maldet
-        fi
-        success "YARA tetap terinstall tetapi native scanning melalui LMD dinonaktifkan."
+        printf '\nscan_yara=1\n' >> /usr/local/maldetect/conf.maldet
     fi
+
+    # When ClamAV is also available, keep LMD's default custom scope:
+    # ClamAV handles the LMD-maintained YARA-compatible signatures,
+    # while native YARA handles custom/full YARA rules supported by LMD.
+    if grep -Eq '^[[:space:]]*scan_yara_scope[[:space:]]*=' /usr/local/maldetect/conf.maldet; then
+        sed -i -E \
+            's/^[[:space:]]*scan_yara_scope[[:space:]]*=.*/scan_yara_scope="custom"/' \
+            /usr/local/maldetect/conf.maldet
+    else
+        printf 'scan_yara_scope="custom"\n' >> /usr/local/maldetect/conf.maldet
+    fi
+
+    success "YARA berhasil diintegrasikan dengan LMD."
+    YARA_INTEGRATED="YES"
+    info "LMD scan_yara     : $(grep -E '^[[:space:]]*scan_yara=' /usr/local/maldetect/conf.maldet | tail -n 1)"
+    info "LMD YARA scope    : $(grep -E '^[[:space:]]*scan_yara_scope=' /usr/local/maldetect/conf.maldet | tail -n 1)"
+
+else
+
+    warning "LMD atau binary YARA tidak tersedia. Integrasi YARA-LMD dilewati."
+
 fi
 
 # ------------------------------------------------------------
@@ -1101,10 +1110,10 @@ fi
 
 printf "%-20s : " "YARA"
 if command -v yara >/dev/null 2>&1; then
-    if [[ "${YARA_ENABLED:-NO}" == "YES" ]]; then
-        echo -e "${GREEN}INSTALLED / ENABLED${NC}"
+    if [[ "${YARA_INTEGRATED:-NO}" == "YES" ]]; then
+        echo -e "${GREEN}INSTALLED / INTEGRATED WITH LMD${NC}"
     else
-        echo -e "${YELLOW}INSTALLED / DISABLED${NC}"
+        echo -e "${YELLOW}INSTALLED / NOT INTEGRATED${NC}"
     fi
 else
     echo -e "${RED}FAILED${NC}"
@@ -1156,7 +1165,7 @@ echo
 echo "Security tools:"
 echo "  ClamAV : ${CLAMAV_ENABLED:-NO}"
 echo "  LMD    : ${LMD_ENABLED:-NO}"
-echo "  YARA   : ${YARA_ENABLED:-NO}"
+echo "  YARA   : ${YARA_INTEGRATED:-NO} (LMD integration)"
 
 echo
 echo "MariaDB configuration:"
