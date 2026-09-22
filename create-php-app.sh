@@ -565,6 +565,132 @@ chmod 0750 "$APP_BACKUP"
 chown root:www-data "$PHP_RUN_DIR"
 chmod 0775 "$PHP_RUN_DIR"
 
+
+# ==============================================================================
+# CLAMAV ACL
+# ==============================================================================
+
+# ACL diterapkan hanya jika entry yang dibutuhkan belum ada.
+# Tidak melakukan setfacl rekursif terhadap seluruh application tree.
+acl_has_entry() {
+    local path="$1"
+    local entry="$2"
+
+    getfacl -cp "$path" 2>/dev/null | grep -Fqx "$entry"
+}
+
+ensure_acl_entry() {
+    local path="$1"
+    local entry="$2"
+
+    [[ -e "$path" || -L "$path" ]] || return 0
+
+    if acl_has_entry "$path" "$entry"; then
+        return 0
+    fi
+
+    log "Menambahkan ACL '${entry}' pada: ${path}"
+    setfacl -m "$entry" "$path"
+}
+
+ensure_default_acl_entry() {
+    local path="$1"
+    local entry="$2"
+
+    [[ -d "$path" ]] || return 0
+
+    if getfacl -cpd "$path" 2>/dev/null | grep -Fqx "$entry"; then
+        return 0
+    fi
+
+    log "Menambahkan default ACL '${entry}' pada: ${path}"
+    setfacl -d -m "$entry" "$path"
+}
+
+configure_clamav_acl() {
+    command -v setfacl >/dev/null 2>&1         || die "setfacl tidak ditemukan. Pastikan package acl sudah terinstall."
+
+    command -v getfacl >/dev/null 2>&1         || die "getfacl tidak ditemukan. Pastikan package acl sudah terinstall."
+
+    id clamav >/dev/null 2>&1         || die "User clamav tidak ditemukan. Pastikan ClamAV sudah terinstall."
+
+    log "Memeriksa ACL ClamAV..."
+
+    # /var/apps hanya perlu traverse.
+    ensure_acl_entry "$APPS_DIR" "user:clamav:--x"
+
+    # Application root.
+    ensure_acl_entry "$APP_ROOT" "user:clamav:r-x"
+
+    # Directory yang dibuat langsung oleh script.
+    local app_dirs=(
+        "$APP_HTDOCS"
+        "$APP_WRITABLE"
+        "$APP_LOGS"
+        "$APP_BACKUP"
+    )
+
+    if [[ "$FRAMEWORK" == "laravel" ]]; then
+        app_dirs+=(
+            "${APP_ROOT}/data"
+            "$APP_COMPOSER"
+            "$APP_VENDOR"
+            "$APP_STORAGE_APP"
+            "$APP_STORAGE_FRAMEWORK"
+            "$APP_STORAGE_LOGS"
+            "$APP_BOOTSTRAP_CACHE"
+            "$APP_HTDOCS/public"
+            "$APP_HTDOCS/vendor"
+        )
+    else
+        local dir
+        for dir in $WRITABLE_DIRS; do
+            app_dirs+=("${APP_WRITABLE}/${dir}")
+        done
+    fi
+
+    local dir
+    for dir in "${app_dirs[@]}"; do
+        [[ -d "$dir" ]] || continue
+        ensure_acl_entry "$dir" "user:clamav:r-x"
+    done
+
+    # Default ACL hanya pada directory runtime yang memang menerima file baru.
+    local runtime_dirs=(
+        "$APP_LOGS"
+    )
+
+    if [[ "$FRAMEWORK" == "laravel" ]]; then
+        runtime_dirs+=(
+            "$APP_STORAGE_APP"
+            "$APP_STORAGE_FRAMEWORK"
+            "$APP_STORAGE_LOGS"
+            "$APP_BOOTSTRAP_CACHE"
+        )
+    else
+        runtime_dirs+=("$APP_WRITABLE")
+
+        for dir in $WRITABLE_DIRS; do
+            runtime_dirs+=("${APP_WRITABLE}/${dir}")
+        done
+    fi
+
+    for dir in "${runtime_dirs[@]}"; do
+        [[ -d "$dir" ]] || continue
+
+        ensure_acl_entry "$dir" "user:clamav:r-x"
+        ensure_default_acl_entry "$dir" "user:clamav:r-X"
+    done
+
+    # Backup tetap root-owned dan tidak writable oleh aplikasi.
+    ensure_acl_entry "$APP_BACKUP" "user:clamav:r-x"
+
+    log "ACL ClamAV selesai."
+}
+
+configure_clamav_acl
+
+
 # Composer binary
 if [[ "$FRAMEWORK" == "laravel" ]]; then
     log "Menyiapkan Composer..."
