@@ -442,7 +442,7 @@ configure_nginx_upload_protection() {
     command -v nginx >/dev/null 2>&1 \
         || die "Nginx tidak ditemukan."
 
-    local vhost="/etc/nginx/sites-available/${DOMAIN}"
+    local vhost="/etc/nginx/sites-available/${APP_NAME}.conf"
 
     if [[ ! -f "${vhost}" ]]; then
         die "Virtual host tidak ditemukan: ${vhost}"
