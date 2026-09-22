@@ -258,6 +258,7 @@ BASIC_PACKAGES=(
     gnupg
     lsb-release
     apt-transport-https
+    acl
 )
 
 info "Memastikan package dasar tersedia..."
@@ -265,6 +266,44 @@ info "Memastikan package dasar tersedia..."
 apt-get install -y "${BASIC_PACKAGES[@]}"
 
 success "Package dasar tersedia."
+
+# ------------------------------------------------------------
+# FILESYSTEM ACL
+# ------------------------------------------------------------
+
+section "FILESYSTEM ACL"
+
+# ACL is used to give ClamAV least-privilege read/traverse access to
+# application writable directories. This script only installs and
+# verifies the ACL tooling and prepares /var/apps for traversal.
+# Per-application ACLs are intentionally handled by create-php-app.sh.
+
+if ! command -v setfacl >/dev/null 2>&1 || ! command -v getfacl >/dev/null 2>&1; then
+    error "Tools setfacl/getfacl tidak tersedia setelah instalasi package acl."
+    exit 1
+fi
+
+success "ACL tools tersedia:"
+info "setfacl : $(command -v setfacl)"
+info "getfacl : $(command -v getfacl)"
+
+# /var/apps is only a traversal point. No read/list permission is granted.
+# This allows the clamav user to reach application paths when a specific
+# application directory grants the required r-x ACL.
+if [[ ! -d /var/apps ]]; then
+    info "Membuat /var/apps sebagai root aplikasi..."
+    install -d -m 0755 /var/apps
+fi
+
+if id clamav >/dev/null 2>&1; then
+    setfacl -m u:clamav:--x /var/apps
+    success "ACL traversal ClamAV pada /var/apps dikonfigurasi."
+else
+    warning "User clamav belum tersedia. ACL /var/apps akan dikonfigurasi setelah ClamAV terinstall."
+fi
+
+info "ACL /var/apps:"
+getfacl -p /var/apps | sed -n '1,12p'
 
 # ------------------------------------------------------------
 # NGINX
@@ -819,6 +858,31 @@ else
 
     success "ClamAV berhasil diinstall."
 fi
+
+# ------------------------------------------------------------
+# CLAMAV FILESYSTEM ACL
+# ------------------------------------------------------------
+# The clamav system account is created by the clamav package. Apply the
+# minimal traversal ACL now as well, so a fresh installation and an
+# existing installation behave identically.
+if [[ ! -d /var/apps ]]; then
+    info "Membuat /var/apps sebagai root aplikasi..."
+    install -d -m 0755 /var/apps
+    success "Directory /var/apps berhasil dibuat."
+else
+    success "Directory /var/apps sudah tersedia."
+fi
+
+if id clamav >/dev/null 2>&1; then
+    setfacl -m u:clamav:--x /var/apps
+    success "ACL traversal ClamAV pada /var/apps dikonfigurasi."
+else
+    error "User clamav tidak ditemukan setelah instalasi ClamAV."
+    exit 1
+fi
+
+info "ACL /var/apps:"
+getfacl -p /var/apps | sed -n '1,12p'
 
 # Ensure the signature database is available, but do not start the
 # scanning daemon automatically before the administrator decides.
