@@ -144,18 +144,26 @@ run_create_php_app() {
 }
 
 create_upload_directories() {
-    info "Membuat struktur upload..."
+    info "Membuat struktur directory aplikasi dan upload..."
 
+    # Document root data directory.
+    # Directory ini berada di dalam htdocs sesuai struktur aplikasi
+    # yang digunakan oleh create-php-app.sh.
+    install -d -m 0755 "${HTDOCS}/data"
+
+    # Writable application data.
     install -d -m 0755 "${APP_ROOT}"
     install -d -m 0755 "${DATA_DIR}"
     install -d -m 0750 "${WRITABLE_DIR}"
     install -d -m 0750 "${UPLOAD_DIR}"
 
+    chown www-data:www-data "${HTDOCS}/data"
     chown www-data:www-data "${DATA_DIR}"
     chown www-data:www-data "${WRITABLE_DIR}"
     chown www-data:www-data "${UPLOAD_DIR}"
 
-    success "Upload directory siap:"
+    success "Directory aplikasi dan upload siap:"
+    echo "       ${HTDOCS}/data"
     echo "       ${UPLOAD_DIR}"
 }
 
@@ -274,7 +282,7 @@ create_upload_php() {
 <?php
 declare(strict_types=1);
 
-const UPLOAD_DIR = '/var/apps/csirtlab/data/writable/uploads';
+const UPLOAD_DIR = '/var/www/html/data/uploads';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 function failUpload(string $message, int $status = 400): never
