@@ -1,0 +1,313 @@
+COMMERCIAL LICENSE
+
+Copyright (c) 2026
+Hendrawan Aprillia Ashari, S.T., M.Kom.
+
+Project: docker-php
+Project/Brand: NR Technology
+
+
+1. PURPOSE
+
+This Commercial License ("License") grants a commercial license to use,
+modify, integrate, distribute, and deploy the docker-php Software for
+commercial purposes where such use is restricted by the accompanying
+Source-Available License.
+
+This License is a separate license agreement between the copyright holder
+and the commercial licensee ("Licensee").
+
+
+2. COPYRIGHT HOLDER
+
+The copyright holder of the original docker-php Software is:
+
+Hendrawan Aprillia Ashari, S.T., M.Kom.
+
+NR Technology is the project and brand identity associated with docker-php
+and is not the copyright holder unless separately stated in writing.
+
+
+3. LICENSE GRANT
+
+Subject to the terms of this License and any applicable commercial agreement,
+the copyright holder grants the Licensee a non-exclusive, non-transferable
+commercial license to:
+
+- Use docker-php for commercial purposes;
+- Deploy docker-php in production environments;
+- Modify and adapt docker-php;
+- Integrate docker-php into the Licensee's software, infrastructure, and
+  operational systems;
+- Create derivative works based on docker-php;
+- Distribute modified versions as part of the Licensee's commercial products
+  or services, subject to this License;
+- Use docker-php as part of managed services, hosting services, consulting
+  services, infrastructure services, and other commercial services.
+
+The specific scope of commercial rights may be further defined by an order,
+quotation, agreement, or written authorization issued by the copyright
+holder.
+
+
+4. LICENSED SOFTWARE
+
+This License applies to the version of docker-php identified in the applicable
+commercial agreement, release, repository revision, or other written
+authorization.
+
+Unless expressly stated otherwise, this License does not automatically grant
+rights to third-party software, dependencies, libraries, Docker base images,
+operating systems, trademarks, logos, or other materials distributed or used
+together with docker-php.
+
+Third-party components remain subject to their respective licenses.
+
+
+5. SOURCE CODE AND MODIFICATIONS
+
+The Licensee may inspect, modify, adapt, and maintain the licensed Software
+for its commercial activities.
+
+The Licensee may create private modifications without being required to
+publish those modifications.
+
+The Licensee must not remove or intentionally obscure the copyright notice
+of the original docker-php source code when redistributing the Software or
+substantial portions of the original source code.
+
+
+6. COMMERCIAL DISTRIBUTION
+
+The Licensee may commercially distribute docker-php or substantial portions
+of the Software only within the scope granted by this License.
+
+The Licensee must not represent docker-php as an independently developed
+software product when substantial portions of the original docker-php source
+code remain present.
+
+Commercial redistribution must preserve appropriate copyright attribution
+and must not falsely imply endorsement, partnership, or official support by
+the copyright holder or NR Technology.
+
+
+7. WHITE-LABEL AND REBRANDING
+
+White-label use, removal of docker-php branding, or redistribution of
+docker-php under another product name is permitted only when expressly
+authorized in the applicable commercial agreement.
+
+Unless such authorization is granted, the Licensee may not represent a
+modified or redistributed version as an official product of the Licensee
+without appropriate disclosure of its origin.
+
+
+8. TRADEMARKS AND BRANDING
+
+This License does not grant ownership of or unrestricted rights to the
+following:
+
+- NR Technology name;
+- NR Technology logo;
+- docker-php name;
+- Other trademarks, service marks, logos, or brand assets belonging to the
+  copyright holder or NR Technology.
+
+Any permitted use of such branding must comply with written authorization
+from the copyright holder.
+
+
+9. FEES AND PAYMENT
+
+Commercial license fees, if applicable, are determined separately between
+the copyright holder and the Licensee.
+
+Unless otherwise stated in a written commercial agreement:
+
+License Fee:
+[TO BE SPECIFIED]
+
+Payment Terms:
+[TO BE SPECIFIED]
+
+License Term:
+[TO BE SPECIFIED]
+
+The commercial license becomes effective only after the applicable commercial
+agreement and payment conditions, if any, have been satisfied.
+
+
+10. SUPPORT AND MAINTENANCE
+
+This License does not automatically include technical support, maintenance,
+custom development, security assessment, updates, upgrades, or service-level
+commitments.
+
+Such services may be provided under a separate support or service agreement.
+
+
+11. SECURITY AND RESEARCH
+
+Commercial security testing, vulnerability assessment, malware analysis,
+penetration testing, defensive security research, and laboratory use are
+permitted within the scope of this License and applicable law.
+
+The Licensee remains responsible for ensuring that its use of the Software
+complies with applicable laws, regulations, contractual obligations, and
+security requirements.
+
+
+12. PROHIBITED USE
+
+The Licensee must not:
+
+- Sublicense the commercial rights granted by this License unless expressly
+  authorized in writing;
+- Sell or transfer this License itself to another party;
+- Claim ownership of the original docker-php source code;
+- Remove or obscure the original copyright attribution from substantial
+  redistributed portions of the Software;
+- Use NR Technology branding in a manner that falsely implies endorsement,
+  partnership, certification, or official support;
+- Use the Software for unlawful activities.
+
+
+13. OWNERSHIP
+
+The Software and all intellectual property rights in the original docker-php
+source code remain the property of the copyright holder.
+
+This License grants usage rights only and does not transfer copyright,
+ownership, or other intellectual property rights to the Licensee.
+
+The Licensee retains ownership of its independently developed software,
+configuration, documentation, data, and other materials that are not part
+of the original docker-php Software.
+
+
+14. DERIVATIVE WORKS
+
+Subject to this License, the Licensee may create derivative works.
+
+Unless otherwise agreed in writing, creation of a derivative work does not
+transfer ownership of the original docker-php code to the Licensee.
+
+The copyright holder retains ownership of the original portions of docker-php.
+
+
+15. CONFIDENTIALITY
+
+This License does not by itself create a confidentiality obligation.
+
+Confidentiality obligations may be established through a separate
+non-disclosure agreement or commercial agreement between the parties.
+
+
+16. WARRANTY DISCLAIMER
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, TITLE, AND NONINFRINGEMENT.
+
+THE COPYRIGHT HOLDER DOES NOT WARRANT THAT THE SOFTWARE WILL BE ERROR-FREE,
+UNINTERRUPTED, OR SUITABLE FOR EVERY PRODUCTION ENVIRONMENT.
+
+ANY ADDITIONAL WARRANTY OR SERVICE COMMITMENT MUST BE EXPRESSLY AGREED IN
+WRITING.
+
+
+17. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDER
+SHALL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR
+PUNITIVE DAMAGES, OR FOR LOSS OF DATA, REVENUE, PROFITS, BUSINESS
+OPPORTUNITIES, OR SERVICE AVAILABILITY ARISING FROM THE USE OF THE SOFTWARE.
+
+ANY DIFFERENT LIABILITY ARRANGEMENT MUST BE EXPRESSLY DEFINED IN THE
+APPLICABLE COMMERCIAL AGREEMENT.
+
+
+18. TERMINATION
+
+This License may be terminated if the Licensee materially breaches its
+terms and fails to remedy the breach within a reasonable period after
+written notice.
+
+Upon termination, the Licensee must cease new deployments and commercial
+distribution of the licensed Software, except where continued use is
+expressly permitted by the applicable commercial agreement or required by
+law.
+
+Termination does not transfer or terminate ownership of intellectual
+property already belonging to either party.
+
+
+19. EFFECT OF TERMINATION
+
+Termination does not require the Licensee to delete independently developed
+software or data that does not contain the licensed docker-php Software.
+
+The Licensee must stop exercising the commercial rights granted under this
+License after the effective termination date, subject to any transition
+rights expressly agreed in writing.
+
+
+20. GOVERNING LAW AND JURISDICTION
+
+The governing law and jurisdiction for a commercial license transaction
+should be specified in the applicable commercial agreement.
+
+Unless otherwise agreed in writing:
+
+Governing Law:
+[TO BE SPECIFIED]
+
+Jurisdiction:
+[TO BE SPECIFIED]
+
+
+21. ENTIRE AGREEMENT
+
+This License together with any applicable quotation, order, commercial
+agreement, written authorization, or addendum constitutes the agreement
+between the copyright holder and the Licensee concerning the commercial
+rights granted for docker-php.
+
+If there is a conflict between this License and a subsequently signed
+commercial agreement, the signed commercial agreement controls to the extent
+of the conflict.
+
+
+22. LICENSE CHANGES
+
+The copyright holder may publish future versions of this Commercial License.
+
+A commercial license already granted under a signed agreement remains
+governed by the terms agreed for that transaction unless the parties
+expressly agree otherwise in writing.
+
+
+23. COPYRIGHT AND ATTRIBUTION
+
+Copyright (c) 2026
+Hendrawan Aprillia Ashari, S.T., M.Kom.
+
+Project: docker-php
+Project/Brand: NR Technology
+
+Copyright in the original docker-php Software remains with the copyright
+holder.
+
+
+24. CONTACT
+
+Commercial licensing inquiries:
+
+Copyright Holder:
+Hendrawan Aprillia Ashari, S.T., M.Kom.
+
+Project/Brand:
+NR Technology
+
+Commercial License Contact:
+[TO BE SPECIFIED]

@@ -1,0 +1,159 @@
+SOURCE-AVAILABLE LICENSE
+
+Copyright (c) 2026
+Hendrawan Aprillia Ashari, S.T., M.Kom.
+
+Project: docker-php
+Project/Brand: NR Technology
+
+
+1. GRANT OF RIGHTS
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+study, inspect, modify, adapt, fork, and develop the Software, subject to the
+terms and conditions of this License.
+
+The Software may be used for:
+
+- Personal use;
+- Educational and teaching purposes;
+- Academic and scientific research;
+- Security research and testing;
+- Internal organizational use;
+- Development, testing, and laboratory environments;
+- Modification and creation of derivative works for the permitted purposes
+  described above.
+
+
+2. SOURCE AVAILABILITY
+
+The source code of the Software may be viewed, studied, modified, and forked
+for the permitted purposes described in this License.
+
+Modified versions and derivative works may be created for personal,
+educational, research, security testing, and internal organizational use.
+
+
+3. REDISTRIBUTION
+
+Redistribution of the original Software or modified versions is permitted
+for personal, educational, research, security testing, and internal
+organizational purposes, provided that:
+
+- This License is included with the redistributed Software;
+- The original copyright notice is preserved;
+- The identity of the original copyright holder is not removed or obscured;
+- Modified versions clearly indicate that modifications have been made.
+
+
+4. PROPRIETARY AND CLOSED-SOURCE PRODUCTS
+
+The Software, or a substantial portion of the Software, may not be incorporated
+into, distributed as, or used as the core of a proprietary or closed-source
+commercial product without prior written permission from the copyright holder.
+
+Creating a proprietary or closed-source product based on the Software requires
+a separate Commercial License or other written authorization from the
+copyright holder.
+
+This restriction does not prohibit the permitted personal, educational,
+research, security testing, or internal organizational uses described in this
+License.
+
+
+5. COMMERCIAL USE
+
+Commercial use of the Software in its original source-available form is not
+automatically granted by this License when such use involves incorporating
+the Software or a substantial portion of its code into a proprietary or
+closed-source commercial product.
+
+Commercial organizations may use, study, modify, and evaluate the Software
+for internal organizational purposes.
+
+Commercial distribution, incorporation into proprietary products, or
+commercial products derived substantially from the Software requires a
+separate Commercial License or written authorization from the copyright
+holder.
+
+
+6. DERIVATIVE WORKS
+
+Derivative works may be created for the purposes permitted by this License.
+
+A derivative work must not falsely represent itself as the original
+Software or imply that it is officially developed, endorsed, or supported
+by the original copyright holder.
+
+The original copyright notice and this License must remain with derivative
+works where the original Software or a substantial portion of its source
+code is redistributed.
+
+
+7. ATTRIBUTION
+
+The following attribution must be retained in copies or substantial
+derivative works:
+
+Copyright (c) 2026
+Hendrawan Aprillia Ashari, S.T., M.Kom.
+
+Project: docker-php
+Project/Brand: NR Technology
+
+The attribution does not grant ownership of the NR Technology name, logo,
+or other branding assets.
+
+
+8. TRADEMARKS AND BRANDING
+
+This License does not grant permission to use the NR Technology name, logo,
+brand identity, or other trademarks or branding assets except where such use
+is necessary to accurately describe the origin of the Software.
+
+Forks and derivative projects must not imply that they are officially
+maintained, endorsed, or supported by NR Technology or the copyright holder
+unless expressly authorized.
+
+
+9. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE,
+ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+
+10. SECURITY AND RESEARCH USE
+
+Security testing, vulnerability research, malware analysis, penetration
+testing, laboratory experimentation, and defensive security research are
+permitted provided that such activities comply with applicable laws and
+regulations.
+
+The Software is intended to support secure infrastructure deployment,
+system administration, development, testing, and security research.
+
+
+11. LICENSE CHANGES
+
+The copyright holder may publish future versions of this License or release
+future versions of the Software under different licensing terms.
+
+Each released version of the Software remains governed by the License
+distributed with that version unless otherwise explicitly stated.
+
+
+12. COPYRIGHT
+
+Copyright in the Software and its original source code remains with:
+
+Hendrawan Aprillia Ashari, S.T., M.Kom.
+
+NR Technology is the project and brand identity associated with the Software
+and is not the copyright holder unless separately stated in writing.
