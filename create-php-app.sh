@@ -2,6 +2,9 @@
 
 set -Eeuo pipefail
 
+SCRIPT_NAME="create-php-app.sh"
+SCRIPT_VERSION="1.1.0"
+
 # ==============================================================================
 # create-php-app.sh
 # Standard PHP-FPM Docker application generator
@@ -20,6 +23,9 @@ PHP_RUN_DIR="/run/php"
 
 usage() {
     cat <<USAGE
+
+${SCRIPT_NAME} v${SCRIPT_VERSION}
+Standard PHP-FPM Docker application generator
 
 Usage:
   $0 <app-name> <php-version> <framework> <domain-name>
@@ -78,6 +84,11 @@ die() {
 # ==============================================================================
 # ARGUMENTS
 # ==============================================================================
+
+if [[ "${1:-}" == "--version" || "${1:-}" == "-V" ]]; then
+    echo "${SCRIPT_NAME} version ${SCRIPT_VERSION}"
+    exit 0
+fi
 
 [[ $# -eq 4 ]] || usage
 
@@ -213,7 +224,7 @@ APP_WRITABLE="${APP_ROOT}/data/writable"
 APP_LOGS="${APP_ROOT}/logs"
 APP_BACKUP="${APP_ROOT}/backup"
 APP_COMPOSER="${APP_ROOT}/composer"
-APP_VENDOR="${APP_ROOT}/data/vendor"
+APP_VENDOR="${APP_ROOT}/vendor"
 APP_STORAGE_APP="${APP_ROOT}/data/storage-app"
 APP_STORAGE_FRAMEWORK="${APP_ROOT}/data/storage-framework"
 APP_STORAGE_LOGS="${APP_ROOT}/data/storage-logs"
@@ -438,13 +449,12 @@ case "$FRAMEWORK" in
         PHP_ROOT="/public"
 
         WRITABLE_MOUNTS="\
-      - ${APP_ROOT}/data/vendor:/var/www/html/vendor:rw
       - ${APP_STORAGE_APP}:/var/www/html/storage/app:rw
       - ${APP_STORAGE_FRAMEWORK}:/var/www/html/storage/framework:rw
       - ${APP_STORAGE_LOGS}:/var/www/html/storage/logs:rw
       - ${APP_BOOTSTRAP_CACHE}:/var/www/html/bootstrap/cache:rw"
 
-        WRITABLE_DIRS="vendor storage-app storage-framework storage-logs bootstrap-cache"
+        WRITABLE_DIRS="storage-app storage-framework storage-logs bootstrap-cache"
 
         WRITABLE_DENY='    location ~ ^/(storage|bootstrap/cache)/.*\.php$ {
         deny all;
@@ -510,7 +520,6 @@ if [[ "$FRAMEWORK" == "laravel" ]]; then
         "$APP_STORAGE_FRAMEWORK/views" \
         "$APP_STORAGE_LOGS" \
         "$APP_BOOTSTRAP_CACHE" \
-        "$APP_HTDOCS/vendor"
 
     # Laravel public storage symlink.
     ln -s ../storage/app/public "${APP_HTDOCS}/public/storage"
@@ -544,6 +553,20 @@ else
     find "$APP_WRITABLE"         -type d         -exec chmod 0750 {} \;
 
     find "$APP_WRITABLE"         -type f         -exec chmod 0640 {} \;
+fi
+
+# Laravel vendor - dependency tree, read-only at runtime.
+# vendor is intentionally outside data/ and is never owned/writable by www-data.
+if [[ "$FRAMEWORK" == "laravel" ]]; then
+    chown -R root:root "$APP_VENDOR"
+
+    find "$APP_VENDOR" \
+        -type d \
+        -exec chmod 0755 {} \;
+
+    find "$APP_VENDOR" \
+        -type f \
+        -exec chmod 0644 {} \;
 fi
 
 # Application logs
@@ -640,7 +663,6 @@ configure_clamav_acl() {
             "$APP_STORAGE_LOGS"
             "$APP_BOOTSTRAP_CACHE"
             "$APP_HTDOCS/public"
-            "$APP_HTDOCS/vendor"
         )
     else
         local dir
@@ -886,6 +908,10 @@ services:
       - ${APP_HTDOCS}:/var/www/html:ro
 
 $(if [[ "$FRAMEWORK" == "laravel" ]]; then
+    printf '      # Laravel dependencies - READ ONLY\n      - %s:/var/www/html/vendor:ro\n' "${APP_VENDOR}"
+fi)
+
+$(if [[ "$FRAMEWORK" == "laravel" ]]; then
     printf '      # Composer binary - READ ONLY\n      - %s/composer:/usr/local/bin/composer:ro\n' "${APP_COMPOSER}"
 fi)
 
@@ -1108,7 +1134,7 @@ Source      : ${APP_HTDOCS}
 $(if [[ "$FRAMEWORK" == "laravel" ]]; then
     printf 'Writable    : %s/data
 ' "${APP_ROOT}"
-    printf 'Vendor      : %s\n' "${APP_VENDOR}"
+    printf 'Vendor      : %s (READ-ONLY runtime)\n' "${APP_VENDOR}"
     printf 'Storage App : %s\n' "${APP_STORAGE_APP}"
 else
     printf 'Writable    : %s
@@ -1181,12 +1207,11 @@ Next Steps
    /usr/local/bin/composer
 
 
-   Install dependency dari container PHP:
-   docker compose exec --user www-data php composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+   Vendor dependency harus sudah tersedia sebelum runtime container dijalankan.
 
    Composer binary: ${APP_COMPOSER}/composer
    Vendor        : ${APP_VENDOR}
-   Mount vendor  : ${APP_VENDOR} -> /var/www/html/vendor
+   Mount vendor  : ${APP_VENDOR} -> /var/www/html/vendor:ro
 
    Laravel public storage:
    ${APP_HTDOCS}/public/storage -> ../storage/app/public
