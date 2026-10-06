@@ -8,7 +8,7 @@ set -euo pipefail
 # ============================================================
 
 SCRIPT_NAME="delete-php-app.sh"
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.2.0"
 
 # ------------------------------------------------------------
 # Configuration
@@ -17,6 +17,9 @@ SCRIPT_VERSION="1.1.0"
 APPS_DIR="/var/apps"
 DOCKER_APPS_DIR="/opt/docker-apps"
 BACKUP_DIR="/opt/docker-php/appsbackup"
+
+NGINX_SITES_AVAILABLE="/etc/nginx/sites-available"
+NGINX_SITES_ENABLED="/etc/nginx/sites-enabled"
 
 # ------------------------------------------------------------
 # Input
@@ -45,6 +48,9 @@ fi
 
 APP_ROOT="${APPS_DIR}/${APP_NAME}"
 APP_DOCKER="${DOCKER_APPS_DIR}/${APP_NAME}"
+
+NGINX_AVAILABLE="${NGINX_SITES_AVAILABLE}/${APP_NAME}.conf"
+NGINX_ENABLED="${NGINX_SITES_ENABLED}/${APP_NAME}.conf"
 
 CONTAINER_NAME="${APP_NAME}-php"
 NETWORK_NAME="${APP_NAME}-network"
@@ -117,18 +123,26 @@ echo "Container   : ${CONTAINER_NAME}"
 echo "Network     : ${NETWORK_NAME}"
 echo "Database    : ${DB_NAME}"
 echo
+echo "Nginx:"
+echo "  Available : ${NGINX_AVAILABLE}"
+echo "  Enabled   : ${NGINX_ENABLED}"
+echo
 echo "Backup      : ${BACKUP_ROOT}"
 echo
 
 echo "PERINGATAN:"
-echo "Aplikasi dan database akan dihapus setelah backup berhasil."
+echo "Aplikasi, database, MariaDB user, Docker resources,"
+echo "dan konfigurasi Nginx akan dihapus setelah backup berhasil."
 echo
 echo "Yang akan dihapus:"
+echo "  - Database         : ${DB_NAME}"
+echo "  - MariaDB user     : ${APP_NAME}"
 echo "  - Docker container : ${CONTAINER_NAME}"
 echo "  - Docker network   : ${NETWORK_NAME}"
 echo "  - Docker config    : ${APP_DOCKER}"
 echo "  - Application      : ${APP_ROOT}"
-echo "  - Database         : ${DB_NAME}"
+echo "  - Nginx available  : ${NGINX_AVAILABLE}"
+echo "  - Nginx enabled    : ${NGINX_ENABLED}"
 echo
 echo "Database akan dibackup terlebih dahulu."
 echo
@@ -245,6 +259,33 @@ fi
 echo "[OK] Database backup valid."
 
 # ------------------------------------------------------------
+# Collect MariaDB users
+# ------------------------------------------------------------
+
+echo
+echo "[CHECK] Memeriksa MariaDB user '${APP_NAME}'..."
+
+DB_USER_HOSTS="$(
+    mariadb \
+        --batch \
+        --skip-column-names \
+        -e "SELECT Host
+            FROM mysql.user
+            WHERE User='${APP_NAME}'
+            ORDER BY Host;"
+)"
+
+if [[ -n "$DB_USER_HOSTS" ]]; then
+    echo "[INFO] MariaDB user ditemukan:"
+    while IFS= read -r HOST; do
+        [[ -z "$HOST" ]] && continue
+        echo "  - ${APP_NAME}@${HOST}"
+    done <<< "$DB_USER_HOSTS"
+else
+    echo "[INFO] MariaDB user '${APP_NAME}' tidak ditemukan."
+fi
+
+# ------------------------------------------------------------
 # Backup information
 # ------------------------------------------------------------
 
@@ -266,13 +307,25 @@ ${CONTAINER_NAME}
 Network:
 ${NETWORK_NAME}
 
+Nginx sites-available:
+${NGINX_AVAILABLE}
+
+Nginx sites-enabled:
+${NGINX_ENABLED}
+
+MariaDB user:
+${APP_NAME}
+
+MariaDB user hosts:
+${DB_USER_HOSTS:-NONE}
+
 Application backup:
 ${APP_BACKUP}
 
 Database backup:
 ${DB_BACKUP}
 
-Database will be dropped after backup validation.
+Database and MariaDB user will be dropped after backup validation.
 EOF
 
 echo
@@ -299,14 +352,28 @@ echo
 echo "Konfigurasi Docker akan dihapus:"
 echo "  ${APP_DOCKER}"
 echo
+echo "Konfigurasi Nginx akan dihapus:"
+echo "  ${NGINX_AVAILABLE}"
+echo "  ${NGINX_ENABLED}"
+echo
 echo "Database akan DIHAPUS:"
 echo "  ${DB_NAME}"
+echo
+echo "MariaDB user akan DIHAPUS:"
+if [[ -n "$DB_USER_HOSTS" ]]; then
+    while IFS= read -r HOST; do
+        [[ -z "$HOST" ]] && continue
+        echo "  ${APP_NAME}@${HOST}"
+    done <<< "$DB_USER_HOSTS"
+else
+    echo "  Tidak ditemukan"
+fi
 echo
 echo "Backup tetap tersedia di:"
 echo "  ${BACKUP_ROOT}"
 echo
 
-read -r -p "Ketik 'DELETE' untuk menghapus aplikasi DAN database: " DELETE_CONFIRM
+read -r -p "Ketik 'DELETE' untuk menghapus aplikasi, database, dan user MariaDB: " DELETE_CONFIRM
 
 if [[ "$DELETE_CONFIRM" != "DELETE" ]]; then
     echo
@@ -323,11 +390,11 @@ fi
 
 echo
 echo "============================================================"
-echo "[5/7] Menghapus database"
+echo "[5/7] Menghapus database dan MariaDB user"
 echo "============================================================"
 
 if mariadb \
-    -e "DROP DATABASE \`${DB_NAME}\`;"; then
+    -e "DROP DATABASE IF EXISTS \`${DB_NAME}\`;"; then
 
     echo "[OK] Database dihapus:"
     echo "     ${DB_NAME}"
@@ -343,6 +410,46 @@ else
     echo "  ${BACKUP_ROOT}"
 
     exit 1
+fi
+
+# ------------------------------------------------------------
+# Drop MariaDB users
+# ------------------------------------------------------------
+
+if [[ -n "$DB_USER_HOSTS" ]]; then
+
+    while IFS= read -r HOST; do
+
+        [[ -z "$HOST" ]] && continue
+
+        # Escape backticks in host just in case
+        ESCAPED_HOST="${HOST//\`/\`\`}"
+
+        if mariadb \
+            -e "DROP USER IF EXISTS '${APP_NAME}'@'${ESCAPED_HOST}';"; then
+
+            echo "[OK] MariaDB user dihapus:"
+            echo "     ${APP_NAME}@${HOST}"
+
+        else
+
+            echo "[ERROR] Gagal menghapus MariaDB user:"
+            echo "        ${APP_NAME}@${HOST}"
+            echo
+            echo "Application dan Docker resources BELUM dihapus."
+            echo
+            echo "Backup tetap tersedia di:"
+            echo "  ${BACKUP_ROOT}"
+
+            exit 1
+        fi
+
+    done <<< "$DB_USER_HOSTS"
+
+else
+
+    echo "[INFO] MariaDB user '${APP_NAME}' tidak ditemukan."
+
 fi
 
 # ------------------------------------------------------------
@@ -393,6 +500,41 @@ else
 fi
 
 # ------------------------------------------------------------
+# Remove Nginx configuration
+# ------------------------------------------------------------
+
+echo
+echo "[INFO] Menghapus konfigurasi Nginx..."
+
+if [[ -f "$NGINX_ENABLED" || -L "$NGINX_ENABLED" ]]; then
+
+    rm -f -- "$NGINX_ENABLED"
+
+    echo "[OK] Nginx sites-enabled dihapus:"
+    echo "     ${NGINX_ENABLED}"
+
+else
+
+    echo "[INFO] Nginx sites-enabled tidak ditemukan:"
+    echo "       ${NGINX_ENABLED}"
+
+fi
+
+if [[ -f "$NGINX_AVAILABLE" || -L "$NGINX_AVAILABLE" ]]; then
+
+    rm -f -- "$NGINX_AVAILABLE"
+
+    echo "[OK] Nginx sites-available dihapus:"
+    echo "     ${NGINX_AVAILABLE}"
+
+else
+
+    echo "[INFO] Nginx sites-available tidak ditemukan:"
+    echo "       ${NGINX_AVAILABLE}"
+
+fi
+
+# ------------------------------------------------------------
 # Remove application files
 # ------------------------------------------------------------
 
@@ -435,11 +577,16 @@ fi
 
 echo
 echo "============================================================"
-echo "[DONE] Aplikasi dan database berhasil dihapus"
+echo "[DONE] Aplikasi dan seluruh resource berhasil dihapus"
 echo "============================================================"
 echo
 echo "Application : ${APP_NAME}"
 echo "Database    : ${DB_NAME}"
+echo "MariaDB user: ${APP_NAME}"
+echo
+echo "Nginx:"
+echo "  Available : ${NGINX_AVAILABLE}"
+echo "  Enabled   : ${NGINX_ENABLED}"
 echo
 echo "Backup tersedia di:"
 echo "  ${BACKUP_ROOT}"
