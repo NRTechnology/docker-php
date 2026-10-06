@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.1.1"
 
 # ==============================================================================
 # create-php-app.sh
@@ -514,7 +514,6 @@ if [[ "$FRAMEWORK" == "laravel" ]]; then
     mkdir -p \
         "$APP_COMPOSER" \
         "$APP_HTDOCS/public" \
-        "$APP_VENDOR" \
         "$APP_STORAGE_APP/public" \
         "$APP_STORAGE_FRAMEWORK/views" \
         "$APP_STORAGE_LOGS" \
@@ -1186,11 +1185,10 @@ Next Steps
    /usr/local/bin/composer
 
 
-   Vendor dependency harus sudah tersedia sebelum runtime container dijalankan.
+   Vendor dependency harus sudah tersedia di dalam source aplikasi sebelum runtime container dijalankan.
 
    Composer binary: ${APP_COMPOSER}/composer
-   Vendor        : ${APP_VENDOR}
-   Mount vendor  : ${APP_VENDOR} -> /var/www/html/vendor:ro
+   Vendor        : ${APP_HTDOCS}/vendor (bagian dari source READ-ONLY)
 
    Laravel public storage:
    ${APP_HTDOCS}/public/storage -> ../storage/app/public
