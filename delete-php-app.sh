@@ -8,7 +8,7 @@ set -euo pipefail
 # ============================================================
 
 SCRIPT_NAME="delete-php-app.sh"
-SCRIPT_VERSION="1.0.1"
+SCRIPT_VERSION="1.1.0"
 
 # ------------------------------------------------------------
 # Configuration
@@ -121,20 +121,20 @@ echo "Backup      : ${BACKUP_ROOT}"
 echo
 
 echo "PERINGATAN:"
-echo "Aplikasi akan dihapus setelah backup berhasil."
+echo "Aplikasi dan database akan dihapus setelah backup berhasil."
 echo
 echo "Yang akan dihapus:"
 echo "  - Docker container : ${CONTAINER_NAME}"
 echo "  - Docker network   : ${NETWORK_NAME}"
 echo "  - Docker config    : ${APP_DOCKER}"
 echo "  - Application      : ${APP_ROOT}"
+echo "  - Database         : ${DB_NAME}"
 echo
-echo "Database '${DB_NAME}' TIDAK akan dihapus."
-echo "Database hanya akan dibackup."
+echo "Database akan dibackup terlebih dahulu."
 echo
 
 # ------------------------------------------------------------
-# Confirmation
+# First confirmation
 # ------------------------------------------------------------
 
 read -r -p "Ketik '${APP_NAME}' untuk melanjutkan: " CONFIRM
@@ -153,7 +153,7 @@ mkdir -p "$BACKUP_ROOT"
 
 echo
 echo "============================================================"
-echo "[1/6] Backup application"
+echo "[1/7] Backup application"
 echo "============================================================"
 
 # Backup seluruh /var/apps/<app>
@@ -171,7 +171,7 @@ echo "     $APP_BACKUP"
 
 echo
 echo "============================================================"
-echo "[2/6] Memeriksa database"
+echo "[2/7] Memeriksa database"
 echo "============================================================"
 
 if ! mariadb \
@@ -185,7 +185,7 @@ if ! mariadb \
     echo "[ERROR] Database '${DB_NAME}' tidak ditemukan."
     echo
     echo "Backup database dibatalkan."
-    echo "Tidak ada data aplikasi yang dihapus."
+    echo "Tidak ada data yang dihapus."
     echo
     echo "Application backup yang sudah dibuat:"
     echo "  $APP_BACKUP"
@@ -201,7 +201,7 @@ echo "[OK] Database ditemukan: ${DB_NAME}"
 
 echo
 echo "============================================================"
-echo "[3/6] Backup database"
+echo "[3/7] Backup database"
 echo "============================================================"
 
 mysqldump \
@@ -220,7 +220,7 @@ echo "     $DB_BACKUP"
 
 echo
 echo "============================================================"
-echo "[4/6] Validasi backup"
+echo "[4/7] Validasi backup"
 echo "============================================================"
 
 echo "[CHECK] Application backup..."
@@ -272,7 +272,7 @@ ${APP_BACKUP}
 Database backup:
 ${DB_BACKUP}
 
-Database was NOT dropped.
+Database will be dropped after backup validation.
 EOF
 
 echo
@@ -291,12 +291,22 @@ echo
 echo "Backup aplikasi : OK"
 echo "Backup database : OK"
 echo
-echo "Sekarang aplikasi akan dihapus."
+echo "PERINGATAN FINAL:"
 echo
-echo "Database '${DB_NAME}' TETAP dipertahankan."
+echo "Aplikasi akan dihapus:"
+echo "  ${APP_ROOT}"
+echo
+echo "Konfigurasi Docker akan dihapus:"
+echo "  ${APP_DOCKER}"
+echo
+echo "Database akan DIHAPUS:"
+echo "  ${DB_NAME}"
+echo
+echo "Backup tetap tersedia di:"
+echo "  ${BACKUP_ROOT}"
 echo
 
-read -r -p "Ketik 'DELETE' untuk benar-benar menghapus aplikasi: " DELETE_CONFIRM
+read -r -p "Ketik 'DELETE' untuk menghapus aplikasi DAN database: " DELETE_CONFIRM
 
 if [[ "$DELETE_CONFIRM" != "DELETE" ]]; then
     echo
@@ -308,12 +318,40 @@ if [[ "$DELETE_CONFIRM" != "DELETE" ]]; then
 fi
 
 # ------------------------------------------------------------
-# Remove Docker container
+# Drop database
 # ------------------------------------------------------------
 
 echo
 echo "============================================================"
-echo "[5/6] Menghapus Docker resources"
+echo "[5/7] Menghapus database"
+echo "============================================================"
+
+if mariadb \
+    -e "DROP DATABASE \`${DB_NAME}\`;"; then
+
+    echo "[OK] Database dihapus:"
+    echo "     ${DB_NAME}"
+
+else
+
+    echo "[ERROR] Gagal menghapus database:"
+    echo "        ${DB_NAME}"
+    echo
+    echo "Application dan Docker resources BELUM dihapus."
+    echo
+    echo "Backup tetap tersedia di:"
+    echo "  ${BACKUP_ROOT}"
+
+    exit 1
+fi
+
+# ------------------------------------------------------------
+# Remove Docker resources
+# ------------------------------------------------------------
+
+echo
+echo "============================================================"
+echo "[6/7] Menghapus Docker resources"
 echo "============================================================"
 
 if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
@@ -330,10 +368,6 @@ else
 
 fi
 
-# ------------------------------------------------------------
-# Remove Docker network
-# ------------------------------------------------------------
-
 if docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
 
     if docker network rm "$NETWORK_NAME" >/dev/null 2>&1; then
@@ -345,9 +379,10 @@ if docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
 
         echo "[WARNING] Network tidak dapat dihapus:"
         echo "          ${NETWORK_NAME}"
-
+        echo
         echo "[INFO] Network mungkin masih digunakan container lain."
         echo "[INFO] Proses dilanjutkan."
+
     fi
 
 else
@@ -363,7 +398,7 @@ fi
 
 echo
 echo "============================================================"
-echo "[6/6] Menghapus application files"
+echo "[7/7] Menghapus application files"
 echo "============================================================"
 
 if [[ -d "$APP_DOCKER" ]]; then
@@ -400,11 +435,11 @@ fi
 
 echo
 echo "============================================================"
-echo "[DONE] Aplikasi berhasil dihapus"
+echo "[DONE] Aplikasi dan database berhasil dihapus"
 echo "============================================================"
 echo
 echo "Application : ${APP_NAME}"
-echo "Database    : ${DB_NAME} (TIDAK DIHAPUS)"
+echo "Database    : ${DB_NAME}"
 echo
 echo "Backup tersedia di:"
 echo "  ${BACKUP_ROOT}"
