@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.2.0"
+SCRIPT_VERSION="1.2.1"
 
 # ==============================================================================
 # create-php-app.sh
@@ -969,14 +969,6 @@ server {
     index index.php index.html;
 
     charset utf-8;
-
-
-    # --------------------------------------------------------------------------
-    # TRUSTED REVERSE PROXY / REAL CLIENT IP
-    # --------------------------------------------------------------------------
-
-    # Trusted reverse proxy list and X-Forwarded-For handling.
-    include ${NGINX_REALIP_CONFIG};
 
 
     # --------------------------------------------------------------------------
