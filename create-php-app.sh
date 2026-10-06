@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.1.1"
+SCRIPT_VERSION="1.2.0"
 
 # ==============================================================================
 # create-php-app.sh
@@ -14,6 +14,7 @@ DOCKER_APPS_DIR="/opt/docker-apps"
 APPS_DIR="/var/apps"
 NGINX_AVAILABLE="/etc/nginx/sites-available"
 NGINX_ENABLED="/etc/nginx/sites-enabled"
+NGINX_REALIP_CONFIG="/etc/nginx/conf.d/realip-trusted-proxies.conf"
 PHP_RUN_DIR="/run/php"
 
 
@@ -176,6 +177,26 @@ command -v nginx >/dev/null 2>&1 \
 
 docker compose version >/dev/null 2>&1 \
     || die "Docker Compose plugin tidak ditemukan."
+
+
+# ==============================================================================
+# TRUSTED REVERSE PROXY / REAL CLIENT IP
+# ==============================================================================
+
+# Trusted reverse proxy configuration is managed separately by:
+#   manage-nginx-realip.sh
+#
+# The configuration is intentionally required before creating a new application.
+[[ -f "$NGINX_REALIP_CONFIG" ]] \
+    || die "Konfigurasi trusted reverse proxy tidak ditemukan: ${NGINX_REALIP_CONFIG}. Jalankan manage-nginx-realip.sh init terlebih dahulu."
+
+grep -Eq '^[[:space:]]*real_ip_header[[:space:]]+X-Forwarded-For;' "$NGINX_REALIP_CONFIG" \
+    || die "real_ip_header X-Forwarded-For tidak ditemukan di ${NGINX_REALIP_CONFIG}."
+
+grep -Eq '^[[:space:]]*real_ip_recursive[[:space:]]+on;' "$NGINX_REALIP_CONFIG" \
+    || die "real_ip_recursive on tidak ditemukan di ${NGINX_REALIP_CONFIG}."
+
+log "Trusted reverse proxy config: ${NGINX_REALIP_CONFIG}"
 
 
 # ==============================================================================
@@ -948,6 +969,14 @@ server {
     index index.php index.html;
 
     charset utf-8;
+
+
+    # --------------------------------------------------------------------------
+    # TRUSTED REVERSE PROXY / REAL CLIENT IP
+    # --------------------------------------------------------------------------
+
+    # Trusted reverse proxy list and X-Forwarded-For handling.
+    include ${NGINX_REALIP_CONFIG};
 
 
     # --------------------------------------------------------------------------
