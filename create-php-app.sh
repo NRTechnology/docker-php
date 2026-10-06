@@ -224,7 +224,6 @@ APP_WRITABLE="${APP_ROOT}/data/writable"
 APP_LOGS="${APP_ROOT}/logs"
 APP_BACKUP="${APP_ROOT}/backup"
 APP_COMPOSER="${APP_ROOT}/composer"
-APP_VENDOR="${APP_ROOT}/vendor"
 APP_STORAGE_APP="${APP_ROOT}/data/storage-app"
 APP_STORAGE_FRAMEWORK="${APP_ROOT}/data/storage-framework"
 APP_STORAGE_LOGS="${APP_ROOT}/data/storage-logs"
@@ -555,20 +554,6 @@ else
     find "$APP_WRITABLE"         -type f         -exec chmod 0640 {} \;
 fi
 
-# Laravel vendor - dependency tree, read-only at runtime.
-# vendor is intentionally outside data/ and is never owned/writable by www-data.
-if [[ "$FRAMEWORK" == "laravel" ]]; then
-    chown -R root:root "$APP_VENDOR"
-
-    find "$APP_VENDOR" \
-        -type d \
-        -exec chmod 0755 {} \;
-
-    find "$APP_VENDOR" \
-        -type f \
-        -exec chmod 0644 {} \;
-fi
-
 # Application logs
 chown -R www-data:www-data "$APP_LOGS"
 
@@ -657,7 +642,6 @@ configure_clamav_acl() {
         app_dirs+=(
             "${APP_ROOT}/data"
             "$APP_COMPOSER"
-            "$APP_VENDOR"
             "$APP_STORAGE_APP"
             "$APP_STORAGE_FRAMEWORK"
             "$APP_STORAGE_LOGS"
@@ -908,10 +892,6 @@ services:
       - ${APP_HTDOCS}:/var/www/html:ro
 
 $(if [[ "$FRAMEWORK" == "laravel" ]]; then
-    printf '      # Laravel dependencies - READ ONLY\n      - %s:/var/www/html/vendor:ro\n' "${APP_VENDOR}"
-fi)
-
-$(if [[ "$FRAMEWORK" == "laravel" ]]; then
     printf '      # Composer binary - READ ONLY\n      - %s/composer:/usr/local/bin/composer:ro\n' "${APP_COMPOSER}"
 fi)
 
@@ -1134,7 +1114,6 @@ Source      : ${APP_HTDOCS}
 $(if [[ "$FRAMEWORK" == "laravel" ]]; then
     printf 'Writable    : %s/data
 ' "${APP_ROOT}"
-    printf 'Vendor      : %s (READ-ONLY runtime)\n' "${APP_VENDOR}"
     printf 'Storage App : %s\n' "${APP_STORAGE_APP}"
 else
     printf 'Writable    : %s
