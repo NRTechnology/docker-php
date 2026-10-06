@@ -6,7 +6,7 @@ set -Eeuo pipefail
 # build-image.sh
 # Standard PHP-FPM Docker Image Builder
 # ==============================================================================
-
+#
 # Supported PHP versions:
 #   7.4
 #   8.2
@@ -14,12 +14,20 @@ set -Eeuo pipefail
 #   8.4
 #   8.5
 #
+# PHP 7.4 note:
+#   PHP 7.4 uses the existing php:7.4-fpm-bullseye image. Debian Bullseye
+#   repositories have moved to the Debian archive, so only the PHP 7.4 build
+#   receives a temporary Dockerfile that points APT to archive.debian.org.
+#
+# Existing Dockerfiles for PHP 8.2+ are NOT modified.
+#
 # Usage:
 #   ./build-image.sh
 #   ./build-image.sh all
+#   ./build-image.sh 7.4
 #   ./build-image.sh 8.2
 #   ./build-image.sh 8.2 8.3
-#   ./build-image.sh 8.2 --no-cache
+#   ./build-image.sh 7.4 --no-cache
 #   ./build-image.sh all --no-cache
 #
 # ==============================================================================
@@ -39,6 +47,11 @@ VERSIONS=(
 )
 
 NO_CACHE=false
+
+# Debian Bullseye archive used only for the PHP 7.4 build.
+PHP74_ARCHIVE_MIRROR="http://archive.debian.org"
+PHP74_ARCHIVE_MAIN="${PHP74_ARCHIVE_MIRROR}/debian"
+PHP74_ARCHIVE_SECURITY="${PHP74_ARCHIVE_MIRROR}/debian-security"
 
 
 # ==============================================================================
@@ -115,6 +128,9 @@ Examples:
   Build semua image:
     $0 all
 
+  Build PHP 7.4:
+    $0 7.4
+
   Build PHP 8.2:
     $0 8.2
 
@@ -124,11 +140,11 @@ Examples:
   Build PHP 8.2 dan 8.3:
     $0 8.2 8.3
 
+  Build PHP 7.4 tanpa cache:
+    $0 7.4 --no-cache
+
   Build PHP 8.2 tanpa cache:
     $0 8.2 --no-cache
-
-  Build PHP 8.3 tanpa cache:
-    $0 8.3 --no-cache
 
   Build semua image tanpa cache:
     $0 all --no-cache
@@ -212,6 +228,77 @@ check_dockerfile() {
 
 
 # ==============================================================================
+# PHP 7.4 ARCHIVE DOCKERFILE
+# ==============================================================================
+
+PHP74_TEMP_DOCKERFILE=""
+
+cleanup_php74_temp_dockerfile() {
+
+    if [[ -n "${PHP74_TEMP_DOCKERFILE:-}" ]] \
+        && [[ -f "$PHP74_TEMP_DOCKERFILE" ]]; then
+
+        rm -f "$PHP74_TEMP_DOCKERFILE" || true
+    fi
+
+    PHP74_TEMP_DOCKERFILE=""
+}
+
+prepare_php74_dockerfile() {
+
+    local image_dir="$1"
+    local source_dockerfile="${image_dir}/Dockerfile"
+
+    PHP74_TEMP_DOCKERFILE="$(mktemp "${image_dir}/.Dockerfile.php74.XXXXXX")"
+
+    # Temporary Dockerfile only:
+    # - keeps the repository Dockerfile untouched
+    # - switches Debian Bullseye repositories to archive.debian.org
+    # - disables APT Valid-Until checking because this is an archived release
+    #
+    # The original Dockerfile content is preserved otherwise.
+    awk '
+        BEGIN {
+            inserted = 0
+        }
+
+        /^RUN apt-get update[[:space:]]*\\/ && inserted == 0 {
+            print "RUN printf \"%s\\\\n\" \\\\" 
+            print "    \"deb [check-valid-until=no] http://archive.debian.org/debian bullseye main\" \\\\" 
+            print "    \"deb [check-valid-until=no] http://archive.debian.org/debian bullseye-updates main\" \\\\" 
+            print "    \"deb [check-valid-until=no] http://archive.debian.org/debian-security bullseye-security main\" \\\\" 
+            print "    > /etc/apt/sources.list \\\\" 
+            print "    && rm -rf /etc/apt/sources.list.d/* \\\\" 
+            print "    && printf \"%s\\\\n\" \"Acquire::Check-Valid-Until \\\\\\\"false\\\\\\\";\" > /etc/apt/apt.conf.d/99archive"
+            inserted = 1
+        }
+
+        {
+            print
+        }
+
+        END {
+            if (inserted == 0) {
+                exit 2
+            }
+        }
+    ' "$source_dockerfile" > "$PHP74_TEMP_DOCKERFILE" || {
+        rm -f "$PHP74_TEMP_DOCKERFILE" || true
+        PHP74_TEMP_DOCKERFILE=""
+        die "Gagal membuat temporary Dockerfile untuk PHP 7.4."
+    }
+
+    if [[ ! -s "$PHP74_TEMP_DOCKERFILE" ]]; then
+        cleanup_php74_temp_dockerfile
+        die "Temporary Dockerfile PHP 7.4 kosong."
+    fi
+
+    info "PHP 7.4: menggunakan Debian Bullseye archive untuk APT."
+    info "Repository PHP 7.4 asli tidak diubah."
+}
+
+
+# ==============================================================================
 # BUILD IMAGE
 # ==============================================================================
 
@@ -221,6 +308,7 @@ build_image() {
 
     local image_name="local/php:${version}"
     local image_dir="${ROOT_DIR}/images/${version}"
+    local dockerfile="${image_dir}/Dockerfile"
 
     check_dockerfile "$version"
 
@@ -237,23 +325,39 @@ build_image() {
 
     echo
 
-    BUILD_ARGS=(
+    local build_file="$dockerfile"
+
+    if [[ "$version" == "7.4" ]]; then
+        prepare_php74_dockerfile "$image_dir"
+        build_file="$PHP74_TEMP_DOCKERFILE"
+    fi
+
+    local build_args=(
         build
         -t "$image_name"
+        -f "$build_file"
     )
 
     if [[ "$NO_CACHE" == true ]]; then
-        BUILD_ARGS+=("--no-cache")
+        build_args+=("--no-cache")
     fi
 
-    BUILD_ARGS+=("$image_dir")
+    build_args+=("$image_dir")
 
-    if docker "${BUILD_ARGS[@]}"; then
+    local build_result=0
+
+    if docker "${build_args[@]}"; then
         success "Image ${image_name} berhasil dibuild."
     else
+        build_result=$?
         error "Build image ${image_name} gagal."
-        return 1
     fi
+
+    if [[ "$version" == "7.4" ]]; then
+        cleanup_php74_temp_dockerfile
+    fi
+
+    return "$build_result"
 }
 
 
@@ -471,6 +575,7 @@ for version in "${SELECTED_VERSIONS[@]}"; do
 
     if [[ "$version" == "7.4" ]]; then
         warning "PHP 7.4 adalah versi legacy/EOL."
+        warning "PHP 7.4 build menggunakan Debian Bullseye archive."
     fi
 
 done
