@@ -15,7 +15,7 @@ RUN docker-php-ext-configure gd \
         --with-jpeg \
         --with-webp
 
-RUN docker-php-ext-install -j"$(nproc)" \
+RUN docker-php-ext-install \
         bcmath curl exif gd intl mbstring mysqli opcache pcntl \
         pdo pdo_mysql pdo_pgsql xml zip
 
