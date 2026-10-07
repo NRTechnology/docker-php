@@ -16,7 +16,7 @@ RUN docker-php-ext-configure gd \
         --with-webp
 
 RUN docker-php-ext-install \
-        bcmath curl exif gd intl mbstring mysqli opcache pcntl \
+        bcmath curl exif gd intl mbstring mysqli pcntl \
         pdo pdo_mysql pdo_pgsql xml zip
 
 RUN pecl install redis-6.2.0 \
