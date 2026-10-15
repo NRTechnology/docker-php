@@ -50,6 +50,7 @@ INDEX_PHP="${HTDOCS}/index.php"
 UPLOAD_PHP="${HTDOCS}/upload.php"
 
 NGINX_SNIPPET="/etc/nginx/snippets/${APP_NAME}-upload-security.conf"
+NGINX_REALIP_CONFIG="/etc/nginx/conf.d/realip-trusted-proxies.conf"
 
 info() {
     echo
@@ -91,6 +92,9 @@ require_repository() {
     [[ -f "${SCRIPT_DIR}/scripts/build-image.sh" ]] \
         || die "scripts/build-image.sh tidak ditemukan."
 
+    [[ -f "${SCRIPT_DIR}/scripts/manage-nginx-realip.sh" ]] \
+        || die "scripts/manage-nginx-realip.sh tidak ditemukan."
+
     [[ -f "${SCRIPT_DIR}/scripts/enable-malware-protection.sh" ]] \
         || die "scripts/enable-malware-protection.sh tidak ditemukan."
 }
@@ -102,6 +106,7 @@ prepare_permissions() {
         "${SCRIPT_DIR}/create-php-app.sh" \
         "${SCRIPT_DIR}/scripts/install-requirements.sh" \
         "${SCRIPT_DIR}/scripts/build-image.sh" \
+        "${SCRIPT_DIR}/scripts/manage-nginx-realip.sh" \
         "${SCRIPT_DIR}/scripts/enable-malware-protection.sh"
 
     success "Permission script siap."
@@ -129,6 +134,32 @@ run_enable_malware_protection() {
     "${SCRIPT_DIR}/scripts/enable-malware-protection.sh"
 
     success "Malware protection selesai dikonfigurasi."
+}
+
+run_manage_nginx_realip() {
+    info "Memastikan konfigurasi trusted reverse proxy tersedia..."
+
+    local manager="${SCRIPT_DIR}/scripts/manage-nginx-realip.sh"
+
+    # Jangan menimpa konfigurasi yang sudah ada. Pada VM baru, jalankan
+    # init agar create-php-app.sh lolos pemeriksaan preflight Real IP.
+    if [[ ! -f "${NGINX_REALIP_CONFIG}" ]]; then
+        info "Konfigurasi Real IP belum ada; menjalankan manage-nginx-realip.sh init..."
+        "${manager}" init
+    else
+        info "Konfigurasi Real IP sudah ada; mempertahankan konfigurasi yang tersedia."
+    fi
+
+    [[ -f "${NGINX_REALIP_CONFIG}" ]] \
+        || die "Konfigurasi trusted reverse proxy tidak berhasil dibuat: ${NGINX_REALIP_CONFIG}"
+
+    grep -Eq '^[[:space:]]*real_ip_header[[:space:]]+X-Forwarded-For;' "${NGINX_REALIP_CONFIG}" \
+        || die "real_ip_header X-Forwarded-For tidak ditemukan di ${NGINX_REALIP_CONFIG}."
+
+    grep -Eq '^[[:space:]]*real_ip_recursive[[:space:]]+on;' "${NGINX_REALIP_CONFIG}" \
+        || die "real_ip_recursive on tidak ditemukan di ${NGINX_REALIP_CONFIG}."
+
+    success "Konfigurasi trusted reverse proxy siap."
 }
 
 run_create_php_app() {
