@@ -642,6 +642,10 @@ main() {
 
     run_enable_malware_protection
 
+    # Pastikan trusted reverse proxy config tersedia SEBELUM create-php-app.sh,
+    # karena create-php-app.sh memeriksa file ini pada tahap preflight.
+    run_manage_nginx_realip
+
     run_create_php_app
 
     create_upload_directories
