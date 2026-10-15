@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.2.1"
+SCRIPT_VERSION="1.2.2"
 
 # ==============================================================================
 # create-php-app.sh
@@ -970,6 +970,8 @@ server {
 
     charset utf-8;
 
+    # Maximum HTTP request body size (all frameworks: Laravel, CI, generic).
+    client_max_body_size 128M;
 
     # --------------------------------------------------------------------------
     # LOGGING
