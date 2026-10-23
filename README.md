@@ -15,7 +15,7 @@ Repository ini menyediakan standar deployment PHP-FPM berbasis Docker dengan:
 - Dukungan Laravel, CodeIgniter 4, dan Generic PHP
 - Dukungan multiple PHP versions dalam satu server
 
-**Current Release: `1.2.0`**
+**Current Release: `1.3.0`**
 
 ---
 
@@ -306,6 +306,12 @@ Mapping ke container:
 
 ├── create-php-app.sh
 
+├── delete-php-app.sh
+
+├── image-audit.sh
+
+├── manage-nginx-realip.sh
+
 ├── test-csirtlab.sh
 
 ├── .gitignore
@@ -540,8 +546,8 @@ cd /opt/docker-php
 
 ```bash
 
-chmod +x create-php-app.sh
-
+chmod +x create-php-app.sh delete-php-app.sh
+chmod +x image-audit.sh manage-nginx-realip.sh
 chmod +x scripts/*.sh
 
 ```
@@ -1595,6 +1601,171 @@ The test script is intended for fresh-VM validation of:
 - ClamAV EICAR detection
 - LMD and YARA integration
 
+# PHP Image Audit and Update
+
+`image-audit.sh` audits **running Docker containers**. It detects the PHP version from each running container, compares it with the latest patch version found on the official PHP downloads page, and identifies outdated containers that use a matching `local/php:<major.minor>` image and have Docker Compose labels.
+
+The script is not a passive audit-only tool. After an explicit confirmation (`UPDATE`), it can:
+
+1. Pull the base image specified by `images/<major.minor>/Dockerfile`.
+2. Rebuild the corresponding `local/php:<major.minor>` image using `scripts/build-image.sh` with `--no-cache`.
+3. Verify the PHP version in the newly built image against the recommendation retrieved from `php.net`.
+4. Recreate the eligible Docker Compose services recorded during the initial audit.
+
+Run it from the repository root:
+
+```bash
+cd /opt/docker-php
+chmod +x ./image-audit.sh
+./image-audit.sh
+```
+
+Review the audit output carefully. The script proceeds only when the exact word `UPDATE` is entered at its confirmation prompt. Any other answer cancels the update operation.
+
+## Scope and limitations
+
+- The audit is based on running containers, not every image stored locally.
+- It attempts to read `PHP_VERSION` from each container using `docker exec <container> php`.
+- Automatic updates are limited to containers using the expected `local/php:<major.minor>` image, with a matching Dockerfile in `images/` and Docker Compose project/service labels.
+- Containers using external images, containers without suitable Compose metadata, and branches for which a recommendation cannot be obtained are reported for manual review.
+- The recommended version is parsed dynamically from the official PHP downloads page. If the page format changes or no version can be identified, the affected branch requires manual review.
+- Rebuilding an image does not automatically update existing containers. This script recreates eligible Compose services only after the rebuilt image passes its PHP version check.
+- The script uses `docker compose up -d --no-deps --force-recreate <service>` for each eligible service. Review dependencies and application behavior before running it on production systems.
+- A successful container recreation does not prove that the application is healthy. Check health checks, PHP-FPM logs, Nginx logs, and application functionality after the update.
+- Confirm application compatibility and test the update in a staging environment before using it on production.
+
+Manual verification after the audit/update:
+
+```bash
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+cd /opt/docker-apps/<application-name>
+docker compose ps
+docker compose logs --tail=100 php
+docker compose exec php php -v
+```
+
+Replace `<application-name>` and the Compose service name `php` with the values used by your deployment.
+
+# Delete PHP Application
+
+`delete-php-app.sh` (`SCRIPT_VERSION=1.2.0`) removes an application managed by this repository after creating and validating backups. Run it from a host where the application paths, Docker, and MariaDB/MySQL client tools match the script's configured environment.
+
+```bash
+cd /opt/docker-php
+chmod +x ./delete-php-app.sh
+sudo ./delete-php-app.sh <application-name>
+```
+
+The application name may contain only letters, numbers, dots, underscores, and dashes. The script uses the application name to derive these resources:
+
+- Application source: `/var/apps/<application-name>`
+- Docker configuration: `/opt/docker-apps/<application-name>`
+- Database: `<application-name>`
+- MariaDB user: `<application-name>` (all matching user hosts are collected)
+- Docker container: `<application-name>-php`
+- Docker network: `<application-name>-network`
+- Nginx configuration: `/etc/nginx/sites-available/<application-name>.conf` and `/etc/nginx/sites-enabled/<application-name>.conf`
+
+## Backup and deletion flow
+
+1. Creates a timestamped backup directory under `/opt/docker-php/appsbackup/<application-name>/<timestamp>/`.
+2. Archives the application directory to `app.tar.gz`.
+3. Dumps the database to `database.sql.gz`, including routines and triggers, then validates the gzip archive.
+4. Validates the application archive and writes `backup-info.txt` with the resource names and backup paths.
+5. Requests the exact application name as the first confirmation.
+6. After backup validation, requests the exact word `DELETE` before dropping the database and MariaDB users and removing the named Docker container/network, Nginx site files, Docker configuration directory, and application directory.
+
+Example backup layout:
+
+```text
+/opt/docker-php/appsbackup/<application-name>/<timestamp>/
+├── app.tar.gz
+├── database.sql.gz
+└── backup-info.txt
+```
+
+## Important behavior and limitations
+
+- This is a destructive script. Confirm the application name and inspect the displayed resource list before proceeding.
+- The script requires `docker`, `tar`, `mysqldump`, `mariadb`, and `gzip`, and expects the database to be accessible with the current MariaDB client credentials.
+- If the application directory or database is missing, or backup validation fails, the script exits before deleting resources. An application archive may remain if a later backup step fails.
+- Database and MariaDB-user removal occurs before Docker, Nginx, and application-directory cleanup. If a later cleanup command fails, the operation may be partially completed; the backups remain in the backup directory.
+- The script removes the specifically named container and network only. It does not run `docker compose down`, and does not explicitly remove Docker volumes or images.
+- After removing Nginx site files, the script does not run `nginx -t` or reload Nginx. Validate and reload Nginx separately if required by the host configuration.
+- The script does not automatically restore from backup. Verify that both backup files are readable and copy the backup directory to protected storage before deletion, especially on production systems.
+- The script checks for required commands but does not explicitly enforce execution as `root`; run it with appropriate privileges.
+
+# Nginx Real IP Behind a Trusted Reverse Proxy
+
+`manage-nginx-realip.sh` manages the trusted-proxy entries used by Nginx Real IP. It expects Nginx and the `ip` command to be installed and must be run as `root`.
+
+The script manages this file:
+
+```text
+/etc/nginx/conf.d/realip-trusted-proxies.conf
+```
+
+Backups are written to:
+
+```text
+/var/backups/nginx-realip/
+```
+
+## Commands
+
+```bash
+cd /opt/docker-php
+
+# Show supported commands
+sudo ./manage-nginx-realip.sh --help
+
+# Create the configuration only if it does not already exist
+sudo ./manage-nginx-realip.sh init
+
+# Add the actual source IP/CIDR of a trusted reverse proxy
+sudo ./manage-nginx-realip.sh add <IP-or-CIDR>
+
+# Remove a trusted reverse proxy
+sudo ./manage-nginx-realip.sh remove <IP-or-CIDR>
+
+# Inspect trusted proxy entries or the complete configuration
+sudo ./manage-nginx-realip.sh list
+sudo ./manage-nginx-realip.sh show
+
+# Validate the configuration and show status
+sudo ./manage-nginx-realip.sh status
+```
+
+The script's initial configuration sets:
+
+```nginx
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
+```
+
+Use `add` only for the real source IP address or CIDR ranges of reverse proxies you control. Do not add arbitrary client addresses or broad Internet ranges. The script explicitly rejects `0.0.0.0/0` and `::/0`.
+
+When adding or removing a proxy, the script backs up the current managed file, edits it, runs `nginx -t`, and reloads Nginx if validation succeeds. If validation fails, it restores the backup and validates the restored configuration.
+
+## Important behavior and limitations
+
+- The script manages trusted proxy declarations and the Real IP header directives; it does not configure DNS, TLS, the reverse proxy itself, or the Nginx `log_format`.
+- Correct client IP logging requires requests to arrive through a trusted proxy that supplies a correct `X-Forwarded-For` header. The trusted address must match the source address Nginx actually sees for that proxy.
+- Existing access logs that use `$remote_addr` will normally reflect the address rewritten by the Real IP module. Confirm the active `log_format` and test through the proxy after configuration.
+- The script does not automatically discover the correct proxy IP/CIDR. Obtain it from the reverse-proxy provider or network configuration before running `add`.
+- `--help` is handled after the script's root and requirement checks, so invoke it as root on a host where Nginx and `ip` are installed.
+- Back up and review existing configuration before making production changes.
+
+Example:
+
+```bash
+sudo ./manage-nginx-realip.sh init
+sudo ./manage-nginx-realip.sh add 203.0.113.10
+sudo ./manage-nginx-realip.sh status
+```
+
+Replace `203.0.113.10` with the actual trusted proxy address; the documentation example address is reserved for examples and is not a real provider recommendation.
+
 # Validate Nginx
 
 ```bash
@@ -2517,16 +2688,25 @@ Scalability
 Current release:
 
 ```text
-1.2.0
+1.3.0
 ```
 
 Release date:
 
 ```text
-2026-09-22
+2026-10-23
 ```
 
-Major changes in 1.2.0:
+Major changes in 1.3.0:
+
+- Added `image-audit.sh` to audit running PHP containers against PHP patch recommendations and, after explicit confirmation, rebuild eligible local images and recreate matching Compose services.
+- Added `manage-nginx-realip.sh` to manage trusted reverse-proxy Real IP configuration for client IP logging.
+- Documented `delete-php-app.sh` for timestamped application/database backups, backup validation, explicit deletion confirmations, and removal of the application's named resources.
+- Fixed image-audit status matching so eligible containers marked `UPDATE TERSEDIA` are selected for recreation after a successful image rebuild.
+- Expanded operational guidance for image rebuilds, container recreation, reverse-proxy trust boundaries, Nginx validation, and safe application deletion/backup limitations.
+
+Previous release 1.2.0:
+
 
 - Added application-level ClamAV ACL integration.
 - Added check-first and targeted ACL handling for application directories.
