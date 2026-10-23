@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 and this project follows [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-10-23
+
+### Added
+
+- Added `image-audit.sh` to audit running PHP containers against the latest patch version detected from the official PHP downloads page.
+- Added an explicit `UPDATE` confirmation before the image-audit script rebuilds images and recreates eligible Docker Compose services.
+- Added post-build PHP version verification before eligible services are recreated.
+- Added `manage-nginx-realip.sh` to manage trusted reverse-proxy IP/CIDR entries for Nginx Real IP handling.
+- Added `delete-php-app.sh` to back up an application's files and database, validate the backups, record backup metadata, and require explicit confirmation before deleting application resources.
+
+### Changed
+
+- Updated the project documentation for the image audit/rebuild workflow, trusted-proxy Real IP configuration, and application deletion/backup procedure.
+- Documented the backup location and the scope of resources handled by `delete-php-app.sh`.
+
+### Fixed
+
+- Fixed the image-audit update loop so it matches the `UPDATE TERSEDIA (...)` status assigned during the audit phase. Previously, the status mismatch could prevent eligible services from being selected for update.
+
+### Security
+
+- The Real IP management script rejects the unrestricted proxy ranges `0.0.0.0/0` and `::/0`.
+- Application deletion requires a validated application and database backup plus two separate confirmations before destructive operations.
+- Documented operational limitations: image audit handles only eligible running Compose-managed containers; application deletion does not automatically remove Docker volumes/images or validate and reload Nginx after removing a site.
+
+### Notes
+
+- `image-audit.sh` relies on parsing the official PHP downloads page; if the page format or network access prevents version detection, manual review is required.
+- The image-audit workflow rebuilds with `scripts/build-image.sh --no-cache` and recreates eligible Compose services using `docker compose up -d --no-deps --force-recreate`. Review application health and logs after an update.
+- `manage-nginx-realip.sh` manages trusted proxy configuration only. It does not configure DNS, TLS, reverse-proxy routing, or Nginx log formats.
+- `delete-php-app.sh` stores backups under `/opt/docker-php/appsbackup/<application-name>/<timestamp>/`. Keep an independent copy of production backups before deletion.
+- Shell syntax validation was performed for the image-audit fix; this changelog entry does not imply a full Docker/MariaDB integration test.
+
 ## [1.2.0] - 2026-09-22
 
 ### Added
@@ -751,18 +784,16 @@ This project uses Semantic Versioning:
 ### Release History
 
 \| Version | Release Date | Description |
+|---|---|---|
+| **1.3.0** | **2026-10-23** | Added PHP image auditing and eligible Compose service updates, trusted-proxy Real IP management, application/database backup and deletion workflow, and fixed image-audit update selection. |
+| **1.2.0** | **2026-09-22** | Added ClamAV on-access malware protection, ACL integration, LMD, YARA, quarantine handling, and CSIRT Lab end-to-end security testing. |
+| **1.1.0** | **2026-09-18** | Added PHP 8.2 support, MariaDB standardization with MySQL compatibility, database provisioning, dynamic Docker subnet restrictions, runtime mount separation, and generator improvements. |
+| **1.0.0** | **2026-09-10** | Initial standardized production PHP-FPM Docker deployment release. |
 
-\|---|---|---|
-
-\| ****1.2.0**** | ****2026-09-22**** | Added ClamAV on-access malware protection, ClamAV ACL integration, Linux Malware Detect (LMD), YARA integration, malware quarantine handling, and CSIRT Lab end-to-end security testing. |
-
-\| ************\*******\*******\*\*1.1.0\*\*\********************** | ************\*******\*******\*\*2026-09-18\*\*\********************** | Added PHP 8.2 support, standardized MariaDB as the database platform while retaining MySQL compatibility, automatic database/user/password creation, dynamic Docker subnet-based database access restriction, dedicated Laravel writable runtime mounts, external Composer preparation, and improvements to the application generator. |
-
-\| ************\*******\*******\*\*1.0.0\*\*\********************** | ************\*******\*******\*\*2026-09-10\*\*\********************** | Initial standardized production PHP-FPM Docker deployment release. |
-
-[Unreleased]: https://github.com/NRTechnology/docker-php/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/NRTechnology/docker-php/compare/v1.3.0...HEAD
 
 [1.1.0]: https://github.com/NRTechnology/docker-php/releases/tag/v1.1.0
 
 [1.0.0]: https://github.com/NRTechnology/docker-php/releases/tag/v1.0.0
 [1.2.0]: https://github.com/NRTechnology/docker-php/releases/tag/v1.2.0
+[1.3.0]: https://github.com/NRTechnology/docker-php/releases/tag/v1.3.0
