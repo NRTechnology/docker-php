@@ -170,10 +170,12 @@ for minor in "${ACTIONABLE_VERSIONS[@]}"; do
   fi
   ok "Image local/php:${minor} terverifikasi menggunakan PHP ${built_php} (rekomendasi resmi: ${required})."
 
-  # Recreate only vulnerable Compose services recorded in the initial audit.
+  # Recreate only outdated Compose services marked UPDATE TERSEDIA during the initial audit.
   for i in "${!IDS[@]}"; do
     [[ "${MINORS[$i]}" == "$minor" ]] || continue
-    [[ "${STATES[$i]}" == 'RENTAN / SIAP UPDATE' ]] || continue
+    # Match the status assigned during the audit phase.
+    # Outdated eligible containers are marked "UPDATE TERSEDIA (<recommended>)".
+    [[ "${STATES[$i]}" == UPDATE\ TERSEDIA\ \(* ]] || continue
     wd="${COMPOSE_WDS[$i]}"; files="${COMPOSE_FILES[$i]}"; service="${COMPOSE_SERVICES[$i]}"
     [[ -n "$wd" && "$wd" != '<no value>' && -n "$files" && "$files" != '<no value>' && -n "$service" && "$service" != '<no value>' ]] || { warn "Label Compose hilang untuk ${NAMES[$i]}; tidak direcreate otomatis."; continue; }
 
