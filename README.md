@@ -821,80 +821,91 @@ docker run --rm local/php:8.4 php-fpm -t
 Application generator:
 
 ```text
-
 create-php-app.sh
-
 ```
 
-Syntax:
+## Syntax
+
+`create-php-app.sh` versi 1.3.1 menggunakan opsi bernama (named options), bukan lagi argumen posisi.
 
 ```bash
-
-./create-php-app.sh <application-name> <php-version> <framework> <domain-name>
-
+./create-php-app.sh \
+  --name <application-name> \
+  --php <php-version> \
+  --framework <framework> \
+  --domain <domain-name> \
+  [--max-body <size>]
 ```
 
-Supported framework:
+Opsi wajib:
 
-```text
+| Opsi | Keterangan |
+|---|---|
+| `--name` | Nama aplikasi/identifier internal, misalnya `myapp`. |
+| `--php` | Versi PHP yang digunakan: `7.4`, `8.2`, `8.3`, `8.4`, atau `8.5`. Image versi tersebut harus sudah dibangun. |
+| `--framework` | Jenis aplikasi: `laravel`, `ci`, atau `generic`. |
+| `--domain` | Domain virtual host Nginx, tanpa skema `http://` atau `https://` dan tanpa path. |
 
-laravel
+Opsi opsional:
 
-ci
+| Opsi | Default | Keterangan |
+|---|---|---|
+| `--max-body` | `8m` | Nilai `client_max_body_size` pada virtual host Nginx. Contoh: `512k`, `8m`, `16m`, atau `1g`. |
+| `-h`, `--help` | — | Menampilkan bantuan. |
+| `-V`, `--version` | — | Menampilkan versi script. |
 
-generic
+`--max-body` menerima bilangan positif dengan suffix opsional `k`, `m`, atau `g` (huruf besar/kecil diterima). Nilai `0` ditolak karena pada Nginx nilai tersebut menonaktifkan batas ukuran request body.
 
-```
+## Contoh penggunaan
 
-Supported PHP versions:
-
-```text
-
-7.4
-
-8.2
-
-8.3
-
-8.4
-
-8.5
-
-```
-
-## Laravel
+### Laravel
 
 ```bash
-
-./create-php-app.sh myapp 8.3 laravel myapp.example.go.id
-
+./create-php-app.sh \
+  --name myapp \
+  --php 8.3 \
+  --framework laravel \
+  --domain myapp.example.go.id \
+  --max-body 16m
 ```
 
-## CodeIgniter 4
+### CodeIgniter 4
 
 ```bash
-
-./create-php-app.sh myapp2 8.4 ci myapp2.example.go.id
-
+./create-php-app.sh \
+  --name myapp2 \
+  --php 8.4 \
+  --framework ci \
+  --domain myapp2.example.go.id
 ```
 
-## Generic PHP
+### Generic PHP
 
 ```bash
-
-./create-php-app.sh myapp3 8.5 generic myapp3.example.go.id
-
+./create-php-app.sh \
+  --name myapp3 \
+  --php 8.5 \
+  --framework generic \
+  --domain app.example.go.id \
+  --max-body 16m
 ```
 
-## Legacy Application
+### Legacy application
 
 ```bash
-
-./create-php-app.sh legacy-app 7.4 generic legacy.example.go.id
-
+./create-php-app.sh \
+  --name legacy-app \
+  --php 7.4 \
+  --framework generic \
+  --domain legacy.example.go.id
 ```
 
----
+### Bantuan dan versi
+
+```bash
+./create-php-app.sh --help
+./create-php-app.sh --version
+```
 
 # What `create-php-app.sh` Does
 
@@ -2276,7 +2287,7 @@ cd /opt/docker-php
 
 ```bash
 
-./create-php-app.sh myapp 8.4 laravel myapp.example.go.id
+./create-php-app.sh --name myapp --php 8.4 --framework laravel --domain myapp.example.go.id
 
 ```
 
@@ -2697,7 +2708,7 @@ Release date:
 2026-10-23
 ```
 
-Major changes in 1.3.0:
+Major changes in 1.3.0 (repository release):
 
 - Added `image-audit.sh` to audit running PHP containers against PHP patch recommendations and, after explicit confirmation, rebuild eligible local images and recreate matching Compose services.
 - Added `manage-nginx-realip.sh` to manage trusted reverse-proxy Real IP configuration for client IP logging.
