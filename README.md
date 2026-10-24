@@ -426,6 +426,8 @@ Contoh:
 
 ├── zz-custom.conf
 
+├── zz-security.ini
+
 └── db-credentials.env
 
 ```
@@ -834,7 +836,8 @@ create-php-app.sh
   --php <php-version> \
   --framework <framework> \
   --domain <domain-name> \
-  [--max-body <size>]
+  [--max-body <size>] \
+  [--enable-feature <function-list>]
 ```
 
 Opsi wajib:
@@ -851,6 +854,7 @@ Opsi opsional:
 | Opsi | Default | Keterangan |
 |---|---|---|
 | `--max-body` | `8m` | Nilai `client_max_body_size` pada virtual host Nginx. Contoh: `512k`, `8m`, `16m`, atau `1g`. |
+| `--enable-feature` | Tidak ada fungsi tambahan yang diaktifkan | Mengaktifkan fungsi PHP tertentu yang secara default dinonaktifkan oleh kebijakan keamanan. Terima daftar nama fungsi yang dipisahkan koma, misalnya `exec,proc_open`. |
 | `-h`, `--help` | — | Menampilkan bantuan. |
 | `-V`, `--version` | — | Menampilkan versi script. |
 
@@ -899,6 +903,55 @@ Opsi opsional:
   --framework generic \
   --domain legacy.example.go.id
 ```
+
+### Mengaktifkan fungsi PHP tertentu
+
+Secara default, generator menonaktifkan fungsi PHP berikut sebagai lapisan hardening:
+
+```text
+exec
+system
+shell_exec
+passthru
+popen
+proc_open
+```
+
+Jika aplikasi benar-benar membutuhkan fungsi tertentu, aktifkan hanya fungsi yang diperlukan menggunakan `--enable-feature`. Nama fungsi dipisahkan dengan koma.
+
+Contoh, mengaktifkan `exec` dan `proc_open` untuk aplikasi `worker`:
+
+```bash
+./create-php-app.sh \
+  --name worker \
+  --php 8.3 \
+  --framework generic \
+  --domain worker.example.go.id \
+  --enable-feature exec,proc_open
+```
+
+Pada contoh tersebut, `exec` dan `proc_open` diizinkan, sedangkan `system`, `shell_exec`, `passthru`, dan `popen` tetap dinonaktifkan.
+
+Opsi ini menghasilkan konfigurasi PHP khusus aplikasi di:
+
+```text
+/opt/docker-apps/<application-name>/zz-security.ini
+```
+
+File tersebut dipasang ke container sebagai konfigurasi read-only. Periksa hasilnya sebelum deployment:
+
+```bash
+cat /opt/docker-apps/worker/zz-security.ini
+cd /opt/docker-apps/worker
+docker compose config
+docker compose exec php php -i | grep '^disable_functions'
+```
+
+**Catatan keamanan:**
+- Aktifkan fungsi hanya jika kebutuhan aplikasi sudah diverifikasi.
+- Hindari mengaktifkan semua fungsi sekaligus. Fungsi seperti `exec` dan `proc_open` dapat memungkinkan aplikasi menjalankan proses sistem.
+- `disable_functions` merupakan salah satu lapisan pertahanan, bukan pengganti isolasi container, pembatasan hak akses, validasi input, atau patch keamanan.
+- Jika opsi `--enable-feature` tidak digunakan, seluruh fungsi pada daftar kebijakan default tetap dinonaktifkan.
 
 ### Bantuan dan versi
 
@@ -1142,6 +1195,8 @@ Generator membuat:
 ├── docker-compose.yml
 
 ├── zz-custom.conf
+
+├── zz-security.ini
 
 └── db-credentials.env
 
