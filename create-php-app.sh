@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.3.1"
+SCRIPT_VERSION="1.4.0"
 
 # ==============================================================================
 # create-php-app.sh
@@ -29,7 +29,7 @@ ${SCRIPT_NAME} v${SCRIPT_VERSION}
 Standard PHP-FPM Docker application generator
 
 Usage:
-  $0 --name <app-name> --php <php-version> --framework <framework> --domain <domain-name> [--max-body <size>]
+  $0 --name <app-name> --php <php-version> --framework <framework> --domain <domain-name> [--max-body <size>] [--enable-feature <feature1,feature2,...>]
 
 Required options:
   --name          Nama aplikasi / identifier internal.
@@ -40,6 +40,10 @@ Required options:
 Optional options:
   --max-body      Batas ukuran HTTP request body Nginx (default: 8m).
                   Contoh: 512k, 8m, 16m, 1g.
+  --enable-feature Fitur PHP berisiko yang diizinkan, dipisahkan koma.
+                  Pilihan: exec, system, shell_exec, passthru, popen, proc_open.
+                  Default: semua fitur tersebut dinonaktifkan.
+                  Contoh: --enable-feature exec,proc_open
   -h, --help      Tampilkan bantuan.
   -V, --version   Tampilkan versi script.
 
@@ -47,6 +51,7 @@ Examples:
   $0 --name myapp --php 8.3 --framework generic --domain app.example.go.id
   $0 --name myapp --php 8.3 --framework generic --domain app.example.go.id --max-body 16m
   $0 --name laravelapp --php 8.4 --framework laravel --domain laravel.example.go.id --max-body 32m
+  $0 --name worker --php 8.3 --framework generic --domain worker.example.go.id --enable-feature exec,proc_open
 
 Database:
   Script mendukung MySQL maupun MariaDB.
@@ -103,6 +108,8 @@ SEEN_PHP=0
 SEEN_FRAMEWORK=0
 SEEN_DOMAIN=0
 SEEN_MAX_BODY=0
+SEEN_ENABLE_FEATURE=0
+ENABLE_FEATURES_RAW=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -130,6 +137,11 @@ while [[ $# -gt 0 ]]; do
             [[ $# -ge 2 && -n "${2:-}" ]] || die "Opsi --max-body memerlukan nilai."
             [[ "$SEEN_MAX_BODY" -eq 0 ]] || die "Opsi --max-body tidak boleh diulang."
             CLIENT_MAX_BODY_SIZE="$2"; SEEN_MAX_BODY=1; shift 2
+            ;;
+        --enable-feature)
+            [[ $# -ge 2 && -n "${2:-}" ]] || die "Opsi --enable-feature memerlukan daftar fitur dipisahkan koma."
+            [[ "$SEEN_ENABLE_FEATURE" -eq 0 ]] || die "Opsi --enable-feature tidak boleh diulang."
+            ENABLE_FEATURES_RAW="$2"; SEEN_ENABLE_FEATURE=1; shift 2
             ;;
         --help|-h)
             usage
@@ -159,6 +171,43 @@ done
 # Zero is rejected because client_max_body_size 0 disables the size check.
 [[ "$CLIENT_MAX_BODY_SIZE" =~ ^[1-9][0-9]*[kKmMgG]?$ ]] \
     || die "Nilai --max-body tidak valid: ${CLIENT_MAX_BODY_SIZE}. Gunakan ukuran positif seperti 512k, 8m, 16m, atau 1g."
+
+
+# Security baseline: disable process-execution functions unless explicitly allowed.
+DANGEROUS_PHP_FEATURES=(exec system shell_exec passthru popen proc_open)
+ENABLE_FEATURES=()
+DISABLED_FEATURES=()
+
+if [[ "$SEEN_ENABLE_FEATURE" -eq 1 ]]; then
+    [[ "$ENABLE_FEATURES_RAW" != ,* && "$ENABLE_FEATURES_RAW" != *, && "$ENABLE_FEATURES_RAW" != *,,* ]] \
+        || die "Format --enable-feature tidak valid. Gunakan daftar dipisahkan koma, misalnya exec,proc_open."
+
+    IFS=',' read -r -a ENABLE_FEATURES <<< "$ENABLE_FEATURES_RAW"
+    declare -A FEATURE_SEEN=()
+    for feature in "${ENABLE_FEATURES[@]}"; do
+        [[ "$feature" =~ ^[a-z_]+$ ]] || die "Nama fitur tidak valid: '${feature}'."
+        case "$feature" in
+            exec|system|shell_exec|passthru|popen|proc_open) ;;
+            *) die "Fitur tidak dikenal: '${feature}'. Pilihan: exec, system, shell_exec, passthru, popen, proc_open." ;;
+        esac
+        [[ -z "${FEATURE_SEEN[$feature]+x}" ]] || die "Fitur diulang: '${feature}'."
+        FEATURE_SEEN[$feature]=1
+    done
+fi
+
+for feature in "${DANGEROUS_PHP_FEATURES[@]}"; do
+    allowed=0
+    for enabled in "${ENABLE_FEATURES[@]}"; do
+        [[ "$feature" == "$enabled" ]] && allowed=1 && break
+    done
+    [[ "$allowed" -eq 1 ]] || DISABLED_FEATURES+=("$feature")
+done
+
+DISABLE_FUNCTIONS="$(IFS=,; printf '%s' "${DISABLED_FEATURES[*]}")"
+ENABLED_FEATURES_DISPLAY="$(IFS=,; printf '%s' "${ENABLE_FEATURES[*]}")"
+[[ -n "$ENABLED_FEATURES_DISPLAY" ]] || ENABLED_FEATURES_DISPLAY="(tidak ada; semua fitur berisiko dinonaktifkan)"
+log "PHP enabled features: ${ENABLED_FEATURES_DISPLAY}"
+log "PHP disabled_functions: ${DISABLE_FUNCTIONS}"
 
 
 # ==============================================================================
@@ -314,6 +363,7 @@ APP_BOOTSTRAP_CACHE="${APP_ROOT}/data/bootstrap-cache"
 DOCKER_APP_ROOT="${DOCKER_APPS_DIR}/${APP_NAME}"
 
 FPM_CONFIG="${DOCKER_APP_ROOT}/zz-custom.conf"
+PHP_SECURITY_CONFIG="${DOCKER_APP_ROOT}/zz-security.ini"
 COMPOSE_FILE="${DOCKER_APP_ROOT}/docker-compose.yml"
 
 NGINX_FILE="${NGINX_AVAILABLE}/${APP_NAME}.conf"
@@ -943,6 +993,22 @@ EOF
 
 
 # ==============================================================================
+# PHP SECURITY CONFIGURATION
+# ==============================================================================
+
+log "Membuat PHP security configuration..."
+
+cat > "$PHP_SECURITY_CONFIG" <<EOF
+; Generated by ${SCRIPT_NAME} v${SCRIPT_VERSION}
+; Application: ${APP_NAME}
+; Features explicitly enabled: ${ENABLED_FEATURES_DISPLAY}
+; Functions not listed below remain disabled by this policy.
+; This is defense in depth, not a substitute for container isolation.
+disable_functions = ${DISABLE_FUNCTIONS}
+EOF
+
+
+# ==============================================================================
 # DOCKER COMPOSE
 # ==============================================================================
 
@@ -986,6 +1052,9 @@ ${WRITABLE_MOUNTS}
 
       # PHP-FPM pool configuration
       - ${FPM_CONFIG}:/usr/local/etc/php-fpm.d/zz-custom.conf:ro
+
+      # Per-application PHP security policy
+      - ${PHP_SECURITY_CONFIG}:/usr/local/etc/php/conf.d/zz-security.ini:ro
 
     environment:
       TZ: Asia/Jakarta
@@ -1124,11 +1193,13 @@ EOF
 
 chmod 0644 \
     "$FPM_CONFIG" \
+    "$PHP_SECURITY_CONFIG" \
     "$COMPOSE_FILE" \
     "$NGINX_FILE"
 
 chown root:root \
     "$FPM_CONFIG" \
+    "$PHP_SECURITY_CONFIG" \
     "$COMPOSE_FILE" \
     "$NGINX_FILE"
 
@@ -1216,6 +1287,9 @@ Docker
 Docker      : ${DOCKER_APP_ROOT}
 Compose     : ${COMPOSE_FILE}
 FPM Pool    : ${FPM_CONFIG}
+PHP Security: ${PHP_SECURITY_CONFIG}
+Enabled PHP : ${ENABLED_FEATURES_DISPLAY}
+Disabled PHP: ${DISABLE_FUNCTIONS}
 Container   : ${CONTAINER_NAME}
 Network     : ${NETWORK_NAME}
 Subnet      : ${NETWORK_SUBNET}
