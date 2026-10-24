@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.2.2"
+SCRIPT_VERSION="1.3.1"
 
 # ==============================================================================
 # create-php-app.sh
@@ -29,26 +29,24 @@ ${SCRIPT_NAME} v${SCRIPT_VERSION}
 Standard PHP-FPM Docker application generator
 
 Usage:
-  $0 <app-name> <php-version> <framework> <domain-name>
+  $0 --name <app-name> --php <php-version> --framework <framework> --domain <domain-name> [--max-body <size>]
 
-PHP versions:
-  7.4 | 8.2 | 8.3 | 8.4 | 8.5
+Required options:
+  --name          Nama aplikasi / identifier internal.
+  --php           Versi PHP-FPM: 7.4 | 8.2 | 8.3 | 8.4 | 8.5
+  --framework     Framework: laravel | ci | generic
+  --domain        Domain yang digunakan oleh Nginx.
 
-Frameworks:
-  laravel | ci | generic
+Optional options:
+  --max-body      Batas ukuran HTTP request body Nginx (default: 8m).
+                  Contoh: 512k, 8m, 16m, 1g.
+  -h, --help      Tampilkan bantuan.
+  -V, --version   Tampilkan versi script.
 
 Examples:
-  $0 myapp 8.2 laravel myapp.example.go.id
-  $0 myapp 8.3 laravel myapp.example.go.id
-  $0 myapp2 8.4 ci myapp2.example.go.id
-  $0 myapp3 8.5 generic myapp3.example.go.id
-  $0 legacy-app 7.4 generic legacy.example.go.id
-
-Description:
-  app-name      Nama aplikasi / identifier internal.
-  php-version   Versi PHP-FPM yang digunakan.
-  framework     Framework aplikasi.
-  domain-name   Domain yang digunakan oleh Nginx.
+  $0 --name myapp --php 8.3 --framework generic --domain app.example.go.id
+  $0 --name myapp --php 8.3 --framework generic --domain app.example.go.id --max-body 16m
+  $0 --name laravelapp --php 8.4 --framework laravel --domain laravel.example.go.id --max-body 32m
 
 Database:
   Script mendukung MySQL maupun MariaDB.
@@ -60,9 +58,8 @@ Database:
     DB_CONNECTION=mysql
 
 USAGE
-    exit 1
+    exit 0
 }
-
 
 # ==============================================================================
 # LOGGING
@@ -91,14 +88,77 @@ if [[ "${1:-}" == "--version" || "${1:-}" == "-V" ]]; then
     exit 0
 fi
 
-[[ $# -eq 4 ]] || usage
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || $# -eq 0 ]]; then
+    usage
+    exit 0
+fi
 
-APP_NAME="$1"
-PHP_VERSION="$2"
-FRAMEWORK="$3"
-DOMAIN_NAME="$4"
+APP_NAME=""
+PHP_VERSION=""
+FRAMEWORK=""
+DOMAIN_NAME=""
+CLIENT_MAX_BODY_SIZE="8m"
+SEEN_NAME=0
+SEEN_PHP=0
+SEEN_FRAMEWORK=0
+SEEN_DOMAIN=0
+SEEN_MAX_BODY=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --name)
+            [[ $# -ge 2 && -n "${2:-}" ]] || die "Opsi --name memerlukan nilai."
+            [[ "$SEEN_NAME" -eq 0 ]] || die "Opsi --name tidak boleh diulang."
+            APP_NAME="$2"; SEEN_NAME=1; shift 2
+            ;;
+        --php)
+            [[ $# -ge 2 && -n "${2:-}" ]] || die "Opsi --php memerlukan nilai."
+            [[ "$SEEN_PHP" -eq 0 ]] || die "Opsi --php tidak boleh diulang."
+            PHP_VERSION="$2"; SEEN_PHP=1; shift 2
+            ;;
+        --framework)
+            [[ $# -ge 2 && -n "${2:-}" ]] || die "Opsi --framework memerlukan nilai."
+            [[ "$SEEN_FRAMEWORK" -eq 0 ]] || die "Opsi --framework tidak boleh diulang."
+            FRAMEWORK="$2"; SEEN_FRAMEWORK=1; shift 2
+            ;;
+        --domain)
+            [[ $# -ge 2 && -n "${2:-}" ]] || die "Opsi --domain memerlukan nilai."
+            [[ "$SEEN_DOMAIN" -eq 0 ]] || die "Opsi --domain tidak boleh diulang."
+            DOMAIN_NAME="$2"; SEEN_DOMAIN=1; shift 2
+            ;;
+        --max-body)
+            [[ $# -ge 2 && -n "${2:-}" ]] || die "Opsi --max-body memerlukan nilai."
+            [[ "$SEEN_MAX_BODY" -eq 0 ]] || die "Opsi --max-body tidak boleh diulang."
+            CLIENT_MAX_BODY_SIZE="$2"; SEEN_MAX_BODY=1; shift 2
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        --version|-V)
+            echo "${SCRIPT_NAME} version ${SCRIPT_VERSION}"
+            exit 0
+            ;;
+        --*)
+            die "Opsi tidak dikenal: $1"
+            ;;
+        *)
+            die "Argumen posisi tidak didukung: $1. Gunakan opsi bernama; lihat --help."
+            ;;
+    esac
+done
+
+[[ -n "$APP_NAME" ]] || die "Opsi --name wajib diisi."
+[[ -n "$PHP_VERSION" ]] || die "Opsi --php wajib diisi."
+[[ -n "$FRAMEWORK" ]] || die "Opsi --framework wajib diisi."
+[[ -n "$DOMAIN_NAME" ]] || die "Opsi --domain wajib diisi."
 
 [[ "$EUID" -eq 0 ]] || die "Script harus dijalankan sebagai root."
+
+# Nginx size syntax: positive integer optionally followed by k, m, or g.
+# Zero is rejected because client_max_body_size 0 disables the size check.
+[[ "$CLIENT_MAX_BODY_SIZE" =~ ^[1-9][0-9]*[kKmMgG]?$ ]] \
+    || die "Nilai --max-body tidak valid: ${CLIENT_MAX_BODY_SIZE}. Gunakan ukuran positif seperti 512k, 8m, 16m, atau 1g."
 
 
 # ==============================================================================
@@ -197,6 +257,7 @@ grep -Eq '^[[:space:]]*real_ip_recursive[[:space:]]+on;' "$NGINX_REALIP_CONFIG" 
     || die "real_ip_recursive on tidak ditemukan di ${NGINX_REALIP_CONFIG}."
 
 log "Trusted reverse proxy config: ${NGINX_REALIP_CONFIG}"
+log "Nginx client_max_body_size: ${CLIENT_MAX_BODY_SIZE}"
 
 
 # ==============================================================================
@@ -971,7 +1032,7 @@ server {
     charset utf-8;
 
     # Maximum HTTP request body size (all frameworks: Laravel, CI, generic).
-    client_max_body_size 128M;
+    client_max_body_size ${CLIENT_MAX_BODY_SIZE};
 
     # --------------------------------------------------------------------------
     # LOGGING
@@ -1125,6 +1186,7 @@ Application
 
 Application : ${APP_NAME}
 Domain      : ${DOMAIN_NAME}
+Max Body    : ${CLIENT_MAX_BODY_SIZE}
 PHP         : ${PHP_VERSION}
 Framework   : ${FRAMEWORK}
 
@@ -1179,6 +1241,7 @@ Nginx
 Config      : ${NGINX_FILE}
 Enabled     : ${NGINX_LINK}
 Domain      : ${DOMAIN_NAME}
+Max Body    : ${CLIENT_MAX_BODY_SIZE}
 
 ============================================================
 PHP-FPM Socket
