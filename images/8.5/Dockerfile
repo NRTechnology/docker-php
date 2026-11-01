@@ -16,10 +16,10 @@ RUN docker-php-ext-configure gd \
         --with-webp
 
 RUN docker-php-ext-install \
-        bcmath curl exif gd intl mbstring mysqli pcntl \
+        bcmath curl exif gd intl mbstring mysqli opcache pcntl \
         pdo pdo_mysql pdo_pgsql xml zip
 
-RUN pecl install redis \
+RUN pecl install redis-6.3.0 \
     && docker-php-ext-enable redis
 
 COPY php.ini /usr/local/etc/php/conf.d/99-custom.ini

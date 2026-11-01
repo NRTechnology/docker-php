@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.4.0"
+SCRIPT_VERSION="1.5.0"
 
 # ==============================================================================
 # create-php-app.sh
@@ -29,7 +29,7 @@ ${SCRIPT_NAME} v${SCRIPT_VERSION}
 Standard PHP-FPM Docker application generator
 
 Usage:
-  $0 --name <app-name> --php <php-version> --framework <framework> --domain <domain-name> [--max-body <size>] [--enable-feature <feature1,feature2,...>]
+  $0 --name <app-name> --php <php-version> --framework <framework> --domain <domain-name> [--max-body <size>] [--enable-feature <feature1,feature2,...>] [--enable-redis]
 
 Required options:
   --name          Nama aplikasi / identifier internal.
@@ -44,6 +44,8 @@ Optional options:
                   Pilihan: exec, system, shell_exec, passthru, popen, proc_open.
                   Default: semua fitur tersebut dinonaktifkan.
                   Contoh: --enable-feature exec,proc_open
+  --enable-redis  Aktifkan integrasi Redis untuk aplikasi (PHP 8.2-8.5).
+                  PHP 7.4 tidak mendukung opsi ini. Default: nonaktif.
   -h, --help      Tampilkan bantuan.
   -V, --version   Tampilkan versi script.
 
@@ -110,6 +112,7 @@ SEEN_DOMAIN=0
 SEEN_MAX_BODY=0
 SEEN_ENABLE_FEATURE=0
 ENABLE_FEATURES_RAW=""
+ENABLE_REDIS=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -142,6 +145,10 @@ while [[ $# -gt 0 ]]; do
             [[ $# -ge 2 && -n "${2:-}" ]] || die "Opsi --enable-feature memerlukan daftar fitur dipisahkan koma."
             [[ "$SEEN_ENABLE_FEATURE" -eq 0 ]] || die "Opsi --enable-feature tidak boleh diulang."
             ENABLE_FEATURES_RAW="$2"; SEEN_ENABLE_FEATURE=1; shift 2
+            ;;
+        --enable-redis)
+            [[ "$ENABLE_REDIS" == "false" ]] || die "Opsi --enable-redis tidak boleh diulang."
+            ENABLE_REDIS=true; shift
             ;;
         --help|-h)
             usage
@@ -259,6 +266,13 @@ case "$PHP_VERSION" in
         die "PHP version tidak didukung: $PHP_VERSION"
         ;;
 esac
+
+# Redis integration is intentionally unavailable for PHP 7.4 applications.
+# Keep the Redis extension in the legacy PHP 7.4 image for compatibility,
+# but reject enabling Redis at application-generation time.
+if [[ "$ENABLE_REDIS" == "true" && "$PHP_VERSION" == "7.4" ]]; then
+    die "PHP 7.4 tidak mendukung Redis."
+fi
 
 
 # ==============================================================================
