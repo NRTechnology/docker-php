@@ -229,6 +229,14 @@ build_image() {
     info "Image      : ${image_name}"
     info "Build path : ${image_dir}"
 
+    # Skip rebuilding when the image already exists.
+    # --no-cache explicitly requests a fresh build, so it bypasses this check.
+    if [[ "$NO_CACHE" != true ]] && docker image inspect "$image_name" >/dev/null 2>&1; then
+        success "Image ${image_name} sudah tersedia. Build dilewati."
+        info "Gunakan --no-cache jika ingin membangun ulang image tanpa cache."
+        return 0
+    fi
+
     if [[ "$NO_CACHE" == true ]]; then
         info "Build mode : --no-cache"
     else
