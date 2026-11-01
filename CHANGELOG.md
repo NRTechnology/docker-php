@@ -6,6 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 and this project follows [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-11-01
+
+### Added
+
+- Added a separately managed Redis Server image using `redis:7.4-alpine`, built and tagged as `local/redis:7.4`.
+- Added `build-redis.sh` to build and verify the Redis image independently from the PHP image build process.
+- Added `create-redis.sh` to create and manage Redis instances, including listing, status checks, logs, start/stop/restart, backup, and removal operations.
+- Added support for a shared Redis instance connected through the dedicated Docker network `docker-php-redis`.
+- Added optional Redis integration to `create-php-app.sh` through the `--enable-redis` option.
+- Added Redis preflight checks to verify the shared Redis instance, Docker network membership, Redis credentials, and PHPRedis extension availability before application provisioning.
+- Added per-application Redis credential generation in:
+  - `/opt/docker-apps/<application-name>/redis-credentials.env`
+- Added Laravel Redis environment configuration for cache, session, and queue connections when Redis integration is enabled.
+
+### Changed
+
+- Updated application deployment documentation to describe optional Redis integration and its requirements.
+- Updated the PHP application generator so Redis integration is enabled only when `--enable-redis` is explicitly supplied.
+- Redis-enabled application containers join the shared `docker-php-redis` network in addition to their own application network.
+- Redis credentials are kept outside the application source tree and stored in a file restricted to owner-only access (`0600`).
+
+### Security
+
+- Redis instances use password authentication.
+- The shared Redis service is not exposed through a published host port; application containers access it through the dedicated Docker network.
+- Redis credentials are stored separately from application source code.
+- The application generator rejects `--enable-redis` when PHP 7.4 is selected. Redis integration is supported by the generator for PHP 8.2–8.5.
+- The shared Redis instance uses configured memory limits and the `noeviction` memory policy to avoid silently evicting keys when the configured memory limit is reached.
+
+### Testing
+
+- Verified the Redis image build and availability of the `local/redis:7.4` image.
+- Verified Redis authentication and connectivity using `redis-cli ping`.
+- Verified Redis SET/GET operations.
+- Verified data persistence after restarting the shared Redis container.
+- Verified AOF persistence is enabled and reports a successful last write.
+- Verified PHPRedis extension availability in the PHP 8.5 image.
+- Verified successful application provisioning for a Laravel application using PHP 8.5 with `--enable-redis`.
+- Verified generated Docker Compose configuration and Nginx configuration validation for the Redis-enabled application.
+
+### Notes
+
+- Redis support is optional. Applications created without `--enable-redis` do not require the shared Redis service.
+- PHP 7.4 remains available for legacy applications but cannot use the Redis integration provided by the application generator.
+- Laravel queue processing requires a separately managed queue worker; enabling Redis in the application generator does not create or start a queue worker.
+- Redis logical database selection does not provide strong resource isolation between applications.
+- AOF persistence is not a replacement for independent backups. Use the Redis backup procedure and retain backups outside the Redis data directory.
+- With the `noeviction` policy, write operations can fail when Redis reaches its configured memory limit; monitor memory usage and plan capacity accordingly.
+
 ## [1.3.0] - 2026-10-23
 
 ### Added
@@ -785,12 +834,14 @@ This project uses Semantic Versioning:
 
 \| Version | Release Date | Description |
 |---|---|---|
+| **1.4.0** | **2026-11-01** | Added standalone Redis image and instance management, optional `--enable-redis` integration for PHP 8.2–8.5 applications, per-application credentials, shared Redis networking, and Laravel Redis configuration. |
 | **1.3.0** | **2026-10-23** | Added PHP image auditing and eligible Compose service updates, trusted-proxy Real IP management, application/database backup and deletion workflow, and fixed image-audit update selection. |
 | **1.2.0** | **2026-09-22** | Added ClamAV on-access malware protection, ACL integration, LMD, YARA, quarantine handling, and CSIRT Lab end-to-end security testing. |
 | **1.1.0** | **2026-09-18** | Added PHP 8.2 support, MariaDB standardization with MySQL compatibility, database provisioning, dynamic Docker subnet restrictions, runtime mount separation, and generator improvements. |
 | **1.0.0** | **2026-09-10** | Initial standardized production PHP-FPM Docker deployment release. |
 
-[Unreleased]: https://github.com/NRTechnology/docker-php/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/NRTechnology/docker-php/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/NRTechnology/docker-php/compare/v1.3.0...v1.4.0
 
 [1.1.0]: https://github.com/NRTechnology/docker-php/releases/tag/v1.1.0
 

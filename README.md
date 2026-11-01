@@ -14,8 +14,10 @@ Repository ini menyediakan standar deployment PHP-FPM berbasis Docker dengan:
 - Docker container hardening
 - Dukungan Laravel, CodeIgniter 4, dan Generic PHP
 - Dukungan multiple PHP versions dalam satu server
+- Dukungan Redis sebagai layanan terpisah dan opsional untuk aplikasi
+- Integrasi PHPRedis untuk PHP 8.2, 8.3, 8.4, dan 8.5
 
-**Current Release: `1.3.0`**
+**Current Release: `1.4.0`**
 
 ---
 
@@ -92,6 +94,8 @@ Setiap aplikasi memiliki:
 
 Dengan arsitektur ini, satu server dapat menjalankan beberapa aplikasi dengan versi PHP yang berbeda.
 
+Redis tersedia sebagai layanan terpisah dan opsional. Aplikasi yang mengaktifkannya terhubung ke Redis melalui Docker network bersama `docker-php-redis`; aplikasi yang tidak menggunakan Redis tetap berjalan dengan konfigurasi database dan network masing-masing.
+
 Contoh:
 
 ```text
@@ -127,6 +131,28 @@ legacy  → PHP 7.4
 > **Note:** PHP 7.4 sudah End-of-Life dan hanya dipertahankan untuk kompatibilitas aplikasi legacy. Jangan gunakan PHP 7.4 untuk aplikasi baru.
 
 Versi PHP yang digunakan aplikasi harus sesuai dengan requirement aplikasi dan dependency lock file.
+
+
+## Redis Support
+
+Docker-PHP menyediakan dukungan Redis secara opsional melalui ekstensi **PHPRedis** dan
+Redis Server yang dijalankan sebagai layanan/container terpisah.
+
+| PHP Version | PHPRedis | Redis pada `create-php-app.sh` |
+|---|---|---|
+| PHP 7.4 | Dapat tersedia pada image, tetapi tidak didukung oleh integrasi generator | Tidak didukung |
+| PHP 8.2 | Didukung | Didukung |
+| PHP 8.3 | Didukung | Didukung |
+| PHP 8.4 | Didukung | Didukung |
+| PHP 8.5 | Didukung | Didukung |
+
+Redis tidak diaktifkan secara default. Aplikasi hanya dihubungkan ke Redis jika opsi
+`--enable-redis` diberikan ketika menjalankan `create-php-app.sh`.
+
+Redis Server tidak dibangun ke dalam image PHP. Image Redis dibangun dan dikelola secara
+terpisah agar siklus hidup, konfigurasi, penyimpanan data, serta resource Redis tidak
+bergantung pada image PHP.
+
 
 ---
 
@@ -786,6 +812,127 @@ local/php:8.5
 
 ```
 
+
+---
+
+# Redis Server
+
+Redis dijalankan sebagai layanan terpisah dari PHP-FPM. Pemisahan ini memungkinkan
+beberapa aplikasi menggunakan layanan Redis bersama, tanpa memasukkan proses Redis ke
+dalam container PHP.
+
+## Build Redis Image
+
+Build image Redis dilakukan secara independen dari `scripts/build-image.sh`:
+
+```bash
+cd /opt/docker-php
+./build-redis.sh
+```
+
+Image yang digunakan:
+
+```text
+local/redis:7.4
+```
+
+Build Redis tidak mengubah atau membangun ulang image PHP.
+
+## Membuat Redis Instance
+
+Gunakan `create-redis.sh` untuk mengelola instance Redis. Contoh membuat instance
+bernama `shared`:
+
+```bash
+cd /opt/docker-php
+./create-redis.sh create shared
+```
+
+Periksa bantuan script untuk melihat opsi konfigurasi yang tersedia pada versi yang
+terpasang:
+
+```bash
+./create-redis.sh --help
+```
+
+Instance Redis dikelola secara terpisah. Contoh lokasi konfigurasi dan data:
+
+```text
+/opt/docker-redis/shared/
+├── docker-compose.yml
+└── .env
+
+/var/lib/docker-redis/shared/
+└── data/
+```
+
+File `.env` menyimpan password Redis dan harus dilindungi dengan permission
+`0600` serta owner `root:root`. Jangan memasukkan file tersebut ke Git atau membagikan
+isinya.
+
+## Perintah Pengelolaan Redis
+
+Contoh perintah operasional:
+
+```bash
+# Daftar instance
+./create-redis.sh list
+
+# Status instance
+./create-redis.sh status shared
+
+# Melihat log
+./create-redis.sh logs shared
+
+# Menjalankan instance
+./create-redis.sh start shared
+
+# Menghentikan instance
+./create-redis.sh stop shared
+
+# Restart instance
+./create-redis.sh restart shared
+
+# Backup data instance
+./create-redis.sh backup shared
+```
+
+Sebelum menjalankan operasi penghapusan, periksa bantuan script dan pastikan nama
+instance benar. Opsi penghapusan permanen seperti `--purge` dapat menghapus data
+instance yang dipilih. Jangan gunakan opsi tersebut tanpa memastikan backup tersedia.
+
+## Redis Network and Security
+
+Redis menggunakan Docker network bersama:
+
+```text
+docker-php-redis
+```
+
+Container Redis tidak perlu mempublikasikan port ke host atau Internet. Container
+aplikasi yang menggunakan Redis bergabung ke network tersebut dan mengakses Redis
+melalui nama service/container serta port internal `6379`.
+
+Contoh endpoint:
+
+```text
+Host : redis-shared
+Port : 6379
+```
+
+Setiap instance harus memiliki konfigurasi, credential, data, dan batas resource
+sendiri. Jangan menghapus direktori data atau volume milik instance lain ketika
+melakukan pemeliharaan.
+
+Konfigurasi default menggunakan autentikasi dan kebijakan memory `noeviction`.
+Dengan kebijakan ini, Redis menolak operasi penulisan ketika batas `maxmemory`
+tercapai, bukan menghapus key secara otomatis. Pantau penggunaan memory dan kapasitas
+disk secara berkala.
+
+Persistence menggunakan AOF dengan `appendfsync everysec`. AOF membantu pemulihan
+data setelah restart, tetapi bukan pengganti backup berkala.
+
+
 ---
 
 # Verify PHP Images
@@ -837,7 +984,8 @@ create-php-app.sh
   --framework <framework> \
   --domain <domain-name> \
   [--max-body <size>] \
-  [--enable-feature <function-list>]
+  [--enable-feature <function-list>] \
+  [--enable-redis]
 ```
 
 Opsi wajib:
@@ -855,6 +1003,7 @@ Opsi opsional:
 |---|---|---|
 | `--max-body` | `8m` | Nilai `client_max_body_size` pada virtual host Nginx. Contoh: `512k`, `8m`, `16m`, atau `1g`. |
 | `--enable-feature` | Tidak ada fungsi tambahan yang diaktifkan | Mengaktifkan fungsi PHP tertentu yang secara default dinonaktifkan oleh kebijakan keamanan. Terima daftar nama fungsi yang dipisahkan koma, misalnya `exec,proc_open`. |
+| `--enable-redis` | Nonaktif | Mengaktifkan integrasi Redis untuk aplikasi. Memerlukan Redis instance yang sudah dibuat dan berjalan pada network `docker-php-redis`. Tidak didukung untuk PHP 7.4. |
 | `-h`, `--help` | — | Menampilkan bantuan. |
 | `-V`, `--version` | — | Menampilkan versi script. |
 
@@ -872,6 +1021,67 @@ Opsi opsional:
   --domain myapp.example.go.id \
   --max-body 16m
 ```
+
+### Laravel dengan Redis
+
+Pastikan image Redis sudah dibangun dan instance Redis sudah berjalan. Kemudian
+tambahkan `--enable-redis` ketika membuat aplikasi:
+
+```bash
+./create-php-app.sh \
+  --name myapp-redis \
+  --php 8.5 \
+  --framework laravel \
+  --domain myapp-redis.example.go.id \
+  --enable-redis
+```
+
+Generator memeriksa ketersediaan Redis instance, container, network, dan ekstensi
+PHPRedis pada image PHP. PHP 7.4 akan ditolak jika opsi `--enable-redis` digunakan.
+
+Generator menyiapkan file credential khusus aplikasi:
+
+```text
+/opt/docker-apps/myapp-redis/redis-credentials.env
+```
+
+File tersebut berisi password Redis dan harus dijaga dengan permission terbatas.
+Jangan commit file ini ke Git.
+
+Contoh nilai konfigurasi Laravel (gunakan password dari file credential, jangan
+menyalin placeholder secara literal):
+
+```env
+CACHE_STORE=redis
+CACHE_DRIVER=redis
+SESSION_DRIVER=redis
+QUEUE_CONNECTION=redis
+
+REDIS_CLIENT=phpredis
+REDIS_HOST=redis-shared
+REDIS_PORT=6379
+REDIS_PASSWORD=<password-redis>
+REDIS_DB=0
+REDIS_CACHE_DB=1
+```
+
+Sesuaikan nama host dan nilai environment dengan isi file
+`redis-credentials.env` serta konfigurasi yang dihasilkan generator.
+
+Setelah container berjalan, verifikasi ekstensi dan konektivitas dari container
+aplikasi:
+
+```bash
+cd /opt/docker-apps/myapp-redis
+
+docker compose exec php php -m | grep -i '^redis$'
+docker compose exec php php artisan config:clear
+docker compose exec php php artisan cache:clear
+```
+
+`QUEUE_CONNECTION=redis` hanya mengatur backend queue. Laravel queue worker tetap
+harus dijalankan sebagai proses/service terpisah; `create-php-app.sh` tidak membuat
+atau menjalankan queue worker secara otomatis.
 
 ### CodeIgniter 4
 
@@ -1198,7 +1408,9 @@ Generator membuat:
 
 ├── zz-security.ini
 
-└── db-credentials.env
+├── db-credentials.env
+
+└── redis-credentials.env       # jika --enable-redis digunakan
 
 ```
 
@@ -2130,7 +2342,7 @@ Mapping:
 
 # Application Isolation
 
-Setiap aplikasi mendapatkan environment terisolasi:
+Setiap aplikasi mendapatkan environment terisolasi. Aplikasi yang mengaktifkan Redis juga terhubung ke network layanan Redis bersama `docker-php-redis`; network ini merupakan jalur khusus menuju layanan Redis, bukan pengganti network aplikasi:
 
 ```text
 
@@ -2754,14 +2966,23 @@ Scalability
 Current release:
 
 ```text
-1.3.0
+1.4.0
 ```
 
 Release date:
 
 ```text
-2026-10-23
+2026-11-01
 ```
+
+Major changes in 1.4.0 (repository release):
+
+- Added a separately managed Redis Server image (`local/redis:7.4`) and instance management workflow.
+- Added optional `--enable-redis` integration to `create-php-app.sh` for supported PHP versions 8.2–8.5.
+- Added per-application Redis credentials and connection to the shared `docker-php-redis` network.
+- PHP 7.4 is explicitly rejected by the application generator when Redis integration is requested.
+- Documented Redis persistence, authentication, resource limits, backup, and operational management.
+- Clarified that Laravel queue processing requires a separately managed queue worker.
 
 Major changes in 1.3.0 (repository release):
 
