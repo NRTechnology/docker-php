@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.6.0"
+SCRIPT_VERSION="1.6.1"
 
 # ==============================================================================
 # create-php-app.sh
@@ -534,7 +534,11 @@ if [[ "$ENABLE_REDIS" == "true" ]]; then
     [[ " ${REDIS_NETWORK_MEMBERS} " == *" ${REDIS_CONTAINER} "* ]] \
         || die "Container ${REDIS_CONTAINER} belum tergabung ke network ${REDIS_NETWORK}."
 
-    if ! docker run --rm --entrypoint php "$IMAGE_NAME" -m 2>/dev/null | grep -ixq 'redis'; then
+    if ! PHP_MODULES="$(docker run --rm --entrypoint php "$IMAGE_NAME" -m 2>/dev/null)"; then
+        die "Gagal memeriksa PHP modules pada image ${IMAGE_NAME}."
+    fi
+
+    if ! grep -ixq 'redis' <<< "$PHP_MODULES"; then
         die "PHP extension Redis tidak ditemukan pada image ${IMAGE_NAME}. Periksa Dockerfile dan build ulang image PHP."
     fi
 
