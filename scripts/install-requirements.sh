@@ -34,7 +34,7 @@ set -Eeuo pipefail
 # ============================================================
 
 SCRIPT_NAME="$(basename "$0")"
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.1.1"
 
 # Repository root and backup directory
 APP_ROOT="/opt/docker-php"
@@ -260,6 +260,7 @@ BASIC_PACKAGES=(
     lsb-release
     apt-transport-https
     acl
+    logrotate
 )
 
 info "Memastikan package dasar tersedia..."
@@ -267,6 +268,24 @@ info "Memastikan package dasar tersedia..."
 apt-get install -y "${BASIC_PACKAGES[@]}"
 
 success "Package dasar tersedia."
+
+# ------------------------------------------------------------
+# LOGROTATE
+# ------------------------------------------------------------
+
+section "CHECK LOGROTATE"
+
+if command -v logrotate >/dev/null 2>&1; then
+    success "Logrotate tersedia."
+    logrotate --version | head -n 1
+else
+    error "Logrotate belum tersedia setelah instalasi package."
+    exit 1
+fi
+
+# Do not write or replace /etc/logrotate.conf or any application
+# rotation policy here. Existing logrotate configuration is preserved.
+info "Konfigurasi logrotate yang sudah ada tidak diubah."
 
 # ------------------------------------------------------------
 # FILESYSTEM ACL
@@ -1232,6 +1251,13 @@ fi
 
 section "FINAL CHECK"
 
+printf "%-20s : " "Logrotate"
+if command -v logrotate >/dev/null 2>&1; then
+    echo -e "${GREEN}OK${NC}"
+else
+    echo -e "${RED}FAILED${NC}"
+fi
+
 printf "%-20s : " "Nginx"
 
 if command -v nginx >/dev/null 2>&1 && systemctl is-active --quiet nginx; then
@@ -1375,7 +1401,7 @@ yara --version 2>/dev/null || echo "  Tidak tersedia"
 
 echo
 
-success "Pemeriksaan dependency selesai."
+success "Pemeriksaan dependency selesai. ${SCRIPT_NAME} v${SCRIPT_VERSION}"
 
 echo
 echo "Quarantine:"
