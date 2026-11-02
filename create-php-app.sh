@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.6.1"
+SCRIPT_VERSION="1.6.2"
 
 # ==============================================================================
 # create-php-app.sh
@@ -1115,6 +1115,13 @@ services:
   php:
     image: ${IMAGE_NAME}
     container_name: ${CONTAINER_NAME}
+
+    # Batasi stdout/stderr container agar log tidak tumbuh tanpa batas.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
     restart: unless-stopped
 
