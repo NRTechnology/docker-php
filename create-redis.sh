@@ -318,6 +318,13 @@ services:
 
     stop_grace_period: 60s
 
+    # Batasi ukuran log stdout/stderr container Docker.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
     healthcheck:
       test:
         - CMD-SHELL
