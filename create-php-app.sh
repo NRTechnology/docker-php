@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.6.2"
+SCRIPT_VERSION="1.6.3"
 
 # ==============================================================================
 # create-php-app.sh
@@ -653,6 +653,16 @@ case "$FRAMEWORK" in
         deny all;
     }'
 
+        # Serve Laravel public storage files, but never execute/serve PHP source.
+        # Nested regex is required because ^~ skips server-level regex locations.
+        LARAVEL_STORAGE_LOCATION='    location ^~ /storage/ {
+        location ~* \.php(?:/|$) {
+            deny all;
+        }
+
+        try_files $uri =404;
+    }'
+
         ;;
 
     ci)
@@ -669,6 +679,8 @@ case "$FRAMEWORK" in
         deny all;
     }'
 
+        LARAVEL_STORAGE_LOCATION=""
+
         ;;
 
     generic)
@@ -684,6 +696,8 @@ case "$FRAMEWORK" in
         WRITABLE_DENY='    location ~ ^/data/.*\.php$ {
         deny all;
     }'
+
+        LARAVEL_STORAGE_LOCATION=""
 
         ;;
 
@@ -1234,6 +1248,13 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+
+    # --------------------------------------------------------------------------
+    # LARAVEL PUBLIC STORAGE (Laravel only)
+    # --------------------------------------------------------------------------
+
+${LARAVEL_STORAGE_LOCATION}
 
 
     # --------------------------------------------------------------------------
