@@ -166,10 +166,10 @@ run_create_php_app() {
     info "Membuat aplikasi ${APP_NAME}..."
 
     "${SCRIPT_DIR}/create-php-app.sh" \
-        "${APP_NAME}" \
-        "${PHP_VERSION}" \
-        "generic" \
-        "${DOMAIN}"
+        --name "${APP_NAME}" \
+        --php "${PHP_VERSION}" \
+        --framework generic \
+        --domain "${DOMAIN}"
 
     success "Aplikasi ${APP_NAME} berhasil dibuat."
 }
