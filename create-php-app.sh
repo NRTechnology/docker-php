@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.6.3"
+SCRIPT_VERSION="1.7.0"
 
 # ==============================================================================
 # create-php-app.sh
@@ -388,6 +388,11 @@ FPM_CONFIG="${DOCKER_APP_ROOT}/zz-custom.conf"
 PHP_SECURITY_CONFIG="${DOCKER_APP_ROOT}/zz-security.ini"
 COMPOSE_FILE="${DOCKER_APP_ROOT}/docker-compose.yml"
 
+# Docker-PHP application registry (consumed by future monitoring collectors).
+MONITORING_ROOT="/var/lib/docker-php/monitoring"
+MONITORING_APPLICATIONS_DIR="${MONITORING_ROOT}/applications"
+APP_REGISTRY_FILE="${MONITORING_APPLICATIONS_DIR}/${APP_NAME}.json"
+
 NGINX_FILE="${NGINX_AVAILABLE}/${APP_NAME}.conf"
 NGINX_LINK="${NGINX_ENABLED}/${APP_NAME}.conf"
 
@@ -416,7 +421,8 @@ for path in \
     "$APP_ROOT" \
     "$DOCKER_APP_ROOT" \
     "$NGINX_FILE" \
-    "$NGINX_LINK"
+    "$NGINX_LINK" \
+    "$APP_REGISTRY_FILE"
 do
     [[ ! -e "$path" && ! -L "$path" ]] \
         || die "Target sudah ada: $path"
@@ -1139,6 +1145,15 @@ services:
 
     restart: unless-stopped
 
+    # Healthcheck ringan: validasi konfigurasi PHP-FPM dan proses master PID 1.
+    # Ini bukan synthetic FastCGI request; lihat catatan keterbatasan di dokumentasi.
+    healthcheck:
+      test: ["CMD-SHELL", "php-fpm -t >/dev/null 2>&1 && kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
     working_dir: /var/www/html
 
     read_only: true
@@ -1381,6 +1396,55 @@ ln -s "$NGINX_FILE" "$NGINX_LINK"
 
 
 # ==============================================================================
+# DOCKER-PHP APPLICATION REGISTRY
+# ==============================================================================
+
+# Registry ditulis paling akhir, setelah konfigurasi aplikasi berhasil dibuat,
+# divalidasi, dan virtual host diaktifkan. File sementara + rename menjaga
+# pembacaan registry tetap atomik bagi collector.
+log "Mendaftarkan aplikasi ke Docker-PHP monitoring registry..."
+
+install -d -o root -g root -m 0750 "$MONITORING_APPLICATIONS_DIR"
+
+REGISTRY_TMP="$(mktemp "${MONITORING_APPLICATIONS_DIR}/.${APP_NAME}.XXXXXX")"
+cleanup_registry_tmp() {
+    [[ -n "${REGISTRY_TMP:-}" && -e "$REGISTRY_TMP" ]] && rm -f "$REGISTRY_TMP"
+}
+trap cleanup_registry_tmp EXIT
+
+cat > "$REGISTRY_TMP" <<EOF
+{
+  "integration": "docker-php",
+  "application": "${APP_NAME}",
+  "container": "${CONTAINER_NAME}",
+  "php_version": "${PHP_VERSION}",
+  "framework": "${FRAMEWORK}",
+  "source": "${APP_HTDOCS}",
+  "writable": "${APP_ROOT}/data",
+  "compose": "${COMPOSE_FILE}",
+  "nginx_config": "${NGINX_FILE}",
+  "fpm_pool": "${FPM_CONFIG}",
+  "php_security_config": "${PHP_SECURITY_CONFIG}",
+  "monitoring": {
+    "fim": true,
+    "docker_health": true,
+    "security": true,
+    "malware": true,
+    "php_fpm": true
+  }
+}
+EOF
+
+chown root:root "$REGISTRY_TMP"
+chmod 0640 "$REGISTRY_TMP"
+mv -f "$REGISTRY_TMP" "$APP_REGISTRY_FILE"
+REGISTRY_TMP=""
+trap - EXIT
+
+log "Registry aplikasi tersimpan: ${APP_REGISTRY_FILE}"
+
+
+# ==============================================================================
 # FINAL SUMMARY
 # ==============================================================================
 
@@ -1428,6 +1492,8 @@ PHP Security: ${PHP_SECURITY_CONFIG}
 Enabled PHP : ${ENABLED_FEATURES_DISPLAY}
 Disabled PHP: ${DISABLE_FUNCTIONS}
 Container   : ${CONTAINER_NAME}
+Healthcheck : php-fpm config + master process (PID 1)
+Registry    : ${APP_REGISTRY_FILE}
 Network     : ${NETWORK_NAME}
 Subnet      : ${NETWORK_SUBNET}
 Gateway     : ${NETWORK_GATEWAY}
@@ -1561,13 +1627,21 @@ fi)
 
    docker compose logs -f php
 
-9. Reload Nginx:
+9. Check Docker health status:
+
+   docker inspect --format '{{.State.Health.Status}}' ${CONTAINER_NAME}
+
+10. Check application registry:
+
+    cat ${APP_REGISTRY_FILE}
+
+11. Reload Nginx:
 
    systemctl reload nginx
 
-10. Test domain:
+12. Test domain:
 
-   curl -I http://${DOMAIN_NAME}
+    curl -I http://${DOMAIN_NAME}
 
 ============================================================
 
