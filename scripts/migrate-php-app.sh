@@ -18,7 +18,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 SCRIPT_NAME="migrate-php-app.sh"
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.1.0"
 
 DOCKER_APPS_DIR="/opt/docker-apps"
 REGISTRY_DIR="/var/lib/docker-php/monitoring/applications"
@@ -45,7 +45,7 @@ Memindai dan memigrasikan seluruh aplikasi Docker-PHP di:
 Usage:
   ./${SCRIPT_NAME}                       Scan seluruh aplikasi (default)
   ./${SCRIPT_NAME} --dry-run             Scan tanpa mengubah file
-  ./${SCRIPT_NAME} --apply               Terapkan perubahan aman
+  ./${SCRIPT_NAME} --apply               Migrasi, validasi, lalu compose up -d
   ./${SCRIPT_NAME} --apply --name APP    Terapkan hanya untuk satu aplikasi
   ./${SCRIPT_NAME} --rollback           Pulihkan backup migrasi terbaru
   ./${SCRIPT_NAME} --rollback --name APP Pulihkan backup terbaru aplikasi
@@ -58,8 +58,16 @@ Perubahan yang dapat diterapkan:
   - PHP-FPM healthcheck dasar, jika belum ada.
   - Application Registry JSON, jika metadata dapat ditentukan.
 
+Alur --apply:
+  1. Backup Compose.
+  2. Tambahkan logging/healthcheck yang belum ada.
+  3. Validasi seluruh Compose yang diproses.
+  4. Jika semua validasi berhasil, jalankan docker compose up -d
+     untuk aplikasi yang Compose-nya berubah.
+  5. Buat report TXT dan JSON.
+
 Batasan:
-  - Tidak menjalankan docker compose up/recreate.
+  - docker compose up -d dapat recreate container aplikasi yang berubah.
   - Tidak mengubah Nginx, database, volume, network, Wazuh Agent/group.
   - Tidak mengganti konfigurasi logging/healthcheck yang sudah ada.
   - Compose yang gagal divalidasi akan dikembalikan dari backup.
@@ -342,10 +350,17 @@ rollback_app() {
     local target="${DOCKER_APPS_DIR}/${app}/${original_name}"
     cp -a "$latest" "$target"
     # Remove only a registry file created by this migration backup.
-    local marker="$(dirname "$latest")/registry-created.marker"
-    if [[ -f "$marker" ]]; then
-        rm -f "${REGISTRY_DIR}/${app}.json"
-        log "Rollback ${app}: registry hasil migrasi dihapus."
+    local marker="$(dirname "$latest")/registry-created.sha256"
+    if [[ -f "$marker" && -f "${REGISTRY_DIR}/${app}.json" ]]; then
+        local expected actual
+        expected="$(cat "$marker")"
+        actual="$(sha256sum "${REGISTRY_DIR}/${app}.json" | awk '{print $1}')"
+        if [[ "$expected" == "$actual" ]]; then
+            rm -f "${REGISTRY_DIR}/${app}.json"
+            log "Rollback ${app}: registry hasil migrasi dihapus."
+        else
+            warn "Rollback ${app}: registry sudah berubah; tidak dihapus."
+        fi
     fi
     log "Rollback ${app}: dipulihkan dari ${latest}"
 }
@@ -367,10 +382,16 @@ if [[ "$MODE" == "rollback" ]]; then
     exit 0
 fi
 
+REPORT_ROOT="${DOCKER_APPS_DIR}/.migration-reports"
+REPORT_TXT="${REPORT_ROOT}/migration-${TIMESTAMP}.txt"
+REPORT_JSON="${REPORT_ROOT}/migration-${TIMESTAMP}.json"
+
 if [[ "$MODE" == "apply" ]]; then
-    mkdir -p "$BACKUP_DIR"
-    chmod 0700 "$BACKUP_ROOT" "$BACKUP_DIR"
+    mkdir -p "$BACKUP_DIR" "$REPORT_ROOT"
+    chmod 0700 "$BACKUP_ROOT" "$BACKUP_DIR" "$REPORT_ROOT"
+    exec > >(tee -a "$REPORT_TXT") 2>&1
     log "Backup migrasi: ${BACKUP_DIR}"
+    log "Report: ${REPORT_TXT}"
 fi
 
 scanned=0
@@ -378,6 +399,12 @@ eligible=0
 changed=0
 failed=0
 skipped=0
+registry_created=0
+compose_up_ok=0
+compose_up_failed=0
+declare -a APPS_TO_UP=()
+declare -a VALIDATED_APPS=()
+declare -a FAILED_APPS=()
 
 printf '\n============================================================\n'
 printf ' DOCKER-PHP BATCH MIGRATION SCAN v%s\n' "$SCRIPT_VERSION"
@@ -433,39 +460,75 @@ PY
         if ! patch_compose "$compose_file" "$service"; then
             cp -a "$backup_app/$(basename "$compose_file")" "$compose_file"
             warn "${app}: patch gagal; konfigurasi dipulihkan."
+            FAILED_APPS+=("$app:patch")
             ((failed+=1))
             continue
         fi
         if ! (cd "$app_dir" && docker compose -f "$compose_file" config >/dev/null); then
             cp -a "$backup_app/$(basename "$compose_file")" "$compose_file"
             warn "${app}: validasi Compose gagal; konfigurasi dipulihkan."
+            FAILED_APPS+=("$app:validation")
             ((failed+=1))
             continue
         fi
         ((changed+=1))
+        APPS_TO_UP+=("$app")
         log "${app}: Compose berhasil diperbarui dan divalidasi."
     else
-        log "${app}: tidak membutuhkan perubahan Compose."
+        log "${app}: tidak membutuhkan perubahan Compose; container tidak perlu di-up ulang."
     fi
 
     # Re-read normalized configuration after patch; registry is based on
     # effective Compose data. Never overwrite existing registry metadata.
     if ! json_after="$(compose_json "$compose_file")"; then
         warn "${app}: gagal membaca Compose setelah perubahan; registry dilewati."
+        FAILED_APPS+=("$app:post-config")
         ((failed+=1))
         continue
     fi
     registry_result="$(write_registry "$app" "$compose_file" "$json_after" "$service")" || {
         warn "${app}: gagal membuat registry."
+        FAILED_APPS+=("$app:registry")
         ((failed+=1))
         continue
     }
     if [[ "$registry_result" == "CREATED" ]]; then
-        : > "${backup_app}/registry-created.marker"
-        chmod 0600 "${backup_app}/registry-created.marker"
+        sha256sum "${REGISTRY_DIR}/${app}.json" | awk '{print $1}' > "${backup_app}/registry-created.sha256"
+        chmod 0600 "${backup_app}/registry-created.sha256"
+        ((registry_created+=1))
     fi
+    VALIDATED_APPS+=("$app")
     log "${app}: registry ${registry_result}."
 done
+
+# Start/recreate only after every eligible application's Compose is valid.
+if [[ "$MODE" == "apply" ]]; then
+    if [[ "$failed" -eq 0 ]]; then
+        log "Semua konfigurasi Compose valid. Memulai tahap docker compose up -d."
+        for app in "${APPS_TO_UP[@]}"; do
+            app_dir="${DOCKER_APPS_DIR}/${app}"
+            compose_file="$(find_compose "$app_dir" || true)"
+            if [[ -z "$compose_file" ]]; then
+                warn "${app}: file Compose hilang sebelum compose up."
+                FAILED_APPS+=("$app:compose-missing")
+                ((failed+=1))
+                ((compose_up_failed+=1))
+                continue
+            fi
+            if (cd "$app_dir" && docker compose -f "$compose_file" up -d); then
+                log "${app}: docker compose up -d berhasil."
+                ((compose_up_ok+=1))
+            else
+                warn "${app}: docker compose up -d GAGAL. Periksa container secara manual."
+                FAILED_APPS+=("$app:compose-up")
+                ((failed+=1))
+                ((compose_up_failed+=1))
+            fi
+        done
+    else
+        warn "Ada konfigurasi/operasi gagal. Tahap docker compose up -d dibatalkan untuk seluruh batch."
+    fi
+fi
 
 printf '\n============================================================\n'
 printf ' MIGRATION SUMMARY\n'
@@ -473,15 +536,60 @@ printf '============================================================\n'
 printf 'Directories scanned : %d\n' "$scanned"
 printf 'PHP applications    : %d\n' "$eligible"
 printf 'Compose changed     : %d\n' "$changed"
+printf 'Registry created    : %d\n' "$registry_created"
+if [[ "$MODE" == "apply" ]]; then
+    printf 'Compose up success  : %d\n' "$compose_up_ok"
+    printf 'Compose up failed   : %d\n' "$compose_up_failed"
+fi
 printf 'Skipped             : %d\n' "$skipped"
 printf 'Failed              : %d\n' "$failed"
 if [[ "$MODE" == "apply" ]]; then
     printf 'Backup directory    : %s\n' "$BACKUP_DIR"
-    printf '\nContainer tidak di-recreate. Jadwalkan penerapan dengan:\n'
-    printf '  cd /opt/docker-apps/<app> && docker compose up -d\n'
+    printf 'TXT report          : %s\n' "$REPORT_TXT"
+    printf 'JSON report         : %s\n' "$REPORT_JSON"
 else
     printf '\nTidak ada file yang diubah. Gunakan --apply untuk menerapkan.\n'
 fi
 printf '============================================================\n'
+
+if [[ "$MODE" == "apply" ]]; then
+    python3 - "$REPORT_JSON" "$SCRIPT_VERSION" "$TIMESTAMP" "$DOCKER_APPS_DIR" \
+        "$scanned" "$eligible" "$changed" "$registry_created" "$compose_up_ok" \
+        "$compose_up_failed" "$skipped" "$failed" "$BACKUP_DIR" \
+        "$(printf '%s\n' "${VALIDATED_APPS[@]}")" \
+        "$(printf '%s\n' "${APPS_TO_UP[@]}")" \
+        "$(printf '%s\n' "${FAILED_APPS[@]}")" <<'PY'
+import json, sys
+(path, version, timestamp, root, scanned, eligible, changed, registry,
+ up_ok, up_failed, skipped, failed, backup, validated, queued, failures) = sys.argv[1:]
+def lines(value):
+    return [x for x in value.splitlines() if x]
+data = {
+  "script": "migrate-php-app.sh",
+  "version": version,
+  "timestamp": timestamp,
+  "directory": root,
+  "mode": "apply",
+  "summary": {
+    "directories_scanned": int(scanned),
+    "php_applications": int(eligible),
+    "compose_changed": int(changed),
+    "registry_created": int(registry),
+    "compose_up_success": int(up_ok),
+    "compose_up_failed": int(up_failed),
+    "skipped": int(skipped),
+    "failed": int(failed)
+  },
+  "validated_applications": lines(validated),
+  "compose_up_attempted": lines(queued),
+  "failures": lines(failures),
+  "backup_directory": backup
+}
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+    chmod 0600 "$REPORT_TXT" "$REPORT_JSON"
+fi
 
 [[ "$failed" -eq 0 ]]
