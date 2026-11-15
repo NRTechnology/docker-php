@@ -8,7 +8,7 @@ set -euo pipefail
 # ============================================================
 
 SCRIPT_NAME="delete-php-app.sh"
-SCRIPT_VERSION="1.2.0"
+SCRIPT_VERSION="1.3.0"
 
 # ------------------------------------------------------------
 # Configuration
@@ -67,8 +67,16 @@ TIMESTAMP="$(date '+%Y-%m-%d_%H-%M-%S')"
 BACKUP_ROOT="${BACKUP_DIR}/${APP_NAME}/${TIMESTAMP}"
 
 APP_BACKUP="${BACKUP_ROOT}/app.tar.gz"
+RESOURCE_BACKUP="${BACKUP_ROOT}/resources.tar.gz"
+PERMISSION_BACKUP="${BACKUP_ROOT}/permissions-backup.txt"
 DB_BACKUP="${BACKUP_ROOT}/database.sql.gz"
 INFO_FILE="${BACKUP_ROOT}/backup-info.txt"
+
+MONITORING_REGISTRY_DIR="/var/lib/docker-php/monitoring/applications"
+APP_REGISTRY_FILE="${MONITORING_REGISTRY_DIR}/${APP_NAME}.json"
+NGINX_ACCESS_LOG="/var/log/nginx/${APP_NAME}.access.log"
+NGINX_ERROR_LOG="/var/log/nginx/${APP_NAME}.error.log"
+PHP_SOCKET="/run/php/${APP_NAME}.sock"
 
 # ------------------------------------------------------------
 # Basic checks
@@ -143,6 +151,11 @@ echo "  - Docker config    : ${APP_DOCKER}"
 echo "  - Application      : ${APP_ROOT}"
 echo "  - Nginx available  : ${NGINX_AVAILABLE}"
 echo "  - Nginx enabled    : ${NGINX_ENABLED}"
+echo "  - Nginx access log : ${NGINX_ACCESS_LOG}"
+echo "  - Nginx error log  : ${NGINX_ERROR_LOG}"
+echo "  - PHP-FPM socket   : ${PHP_SOCKET}"
+echo "  - App registry     : ${APP_REGISTRY_FILE}"
+echo "  - Resource backup  : ${RESOURCE_BACKUP}"
 echo
 echo "Database akan dibackup terlebih dahulu."
 echo
@@ -178,6 +191,61 @@ tar \
 
 echo "[OK] Application backup selesai."
 echo "     $APP_BACKUP"
+
+# ------------------------------------------------------------
+# Backup supporting resources created by create-php-app.sh
+# ------------------------------------------------------------
+
+echo
+echo "============================================================"
+echo "[1b/7] Backup Docker, Nginx, registry, and related resources"
+echo "============================================================"
+
+RESOURCE_PATHS=()
+for path in \
+    "opt/docker-apps/${APP_NAME}" \
+    "etc/nginx/sites-available/${APP_NAME}.conf" \
+    "etc/nginx/sites-enabled/${APP_NAME}.conf" \
+    "var/lib/docker-php/monitoring/applications/${APP_NAME}.json" \
+    "var/log/nginx/${APP_NAME}.access.log" \
+    "var/log/nginx/${APP_NAME}.error.log"
+do
+    if [[ -e "/${path}" || -L "/${path}" ]]; then
+        RESOURCE_PATHS+=("$path")
+    fi
+done
+
+if (( ${#RESOURCE_PATHS[@]} > 0 )); then
+    tar -czpf "$RESOURCE_BACKUP" -C / "${RESOURCE_PATHS[@]}"
+else
+    tar -czf "$RESOURCE_BACKUP" --files-from /dev/null
+fi
+
+if ! tar -tzf "$RESOURCE_BACKUP" >/dev/null 2>&1; then
+    echo "[ERROR] Resource backup tidak valid. Tidak ada data yang dihapus."
+    exit 1
+fi
+echo "[OK] Resource backup valid: $RESOURCE_BACKUP"
+
+# Snapshot permission global sebelum cleanup. Snapshot ini menjadi referensi
+# pemulihan; permission shared tidak diubah secara membabi buta.
+{
+    echo "Timestamp: ${TIMESTAMP}"
+    for path in "$APPS_DIR" "$APP_ROOT" "/run/php"; do
+        if [[ -e "$path" ]]; then
+            echo
+            echo "===== STAT: $path ====="
+            stat -c 'owner=%U:%G mode=%a type=%F' "$path" 2>&1 || true
+            echo "===== ACL: $path ====="
+            if command -v getfacl >/dev/null 2>&1; then
+                getfacl -p "$path" 2>&1 || true
+            else
+                echo "getfacl tidak tersedia"
+            fi
+        fi
+    done
+} > "$PERMISSION_BACKUP"
+echo "[OK] Permission snapshot: $PERMISSION_BACKUP"
 
 # ------------------------------------------------------------
 # Check database
@@ -258,6 +326,15 @@ fi
 
 echo "[OK] Database backup valid."
 
+echo
+echo "[CHECK] Resource backup..."
+if ! tar -tzf "$RESOURCE_BACKUP" >/dev/null 2>&1; then
+    echo "[ERROR] Resource backup tidak valid."
+    echo "Tidak ada data yang dihapus."
+    exit 1
+fi
+echo "[OK] Resource backup valid."
+
 # ------------------------------------------------------------
 # Collect MariaDB users
 # ------------------------------------------------------------
@@ -326,6 +403,22 @@ Database backup:
 ${DB_BACKUP}
 
 Database and MariaDB user will be dropped after backup validation.
+
+Supporting resources backup:
+${RESOURCE_BACKUP}
+
+Permission snapshot:
+${PERMISSION_BACKUP}
+
+Application registry:
+${APP_REGISTRY_FILE}
+
+Nginx logs:
+${NGINX_ACCESS_LOG}
+${NGINX_ERROR_LOG}
+
+PHP-FPM socket:
+${PHP_SOCKET}
 EOF
 
 echo
@@ -355,6 +448,12 @@ echo
 echo "Konfigurasi Nginx akan dihapus:"
 echo "  ${NGINX_AVAILABLE}"
 echo "  ${NGINX_ENABLED}"
+echo "  ${NGINX_ACCESS_LOG}"
+echo "  ${NGINX_ERROR_LOG}"
+echo
+echo "Registry dan socket akan dihapus:"
+echo "  ${APP_REGISTRY_FILE}"
+echo "  ${PHP_SOCKET}"
 echo
 echo "Database akan DIHAPUS:"
 echo "  ${DB_NAME}"
@@ -500,38 +599,72 @@ else
 fi
 
 # ------------------------------------------------------------
-# Remove Nginx configuration
+# Remove Nginx configuration, validate, and reload
 # ------------------------------------------------------------
 
 echo
 echo "[INFO] Menghapus konfigurasi Nginx..."
 
 if [[ -f "$NGINX_ENABLED" || -L "$NGINX_ENABLED" ]]; then
-
     rm -f -- "$NGINX_ENABLED"
-
-    echo "[OK] Nginx sites-enabled dihapus:"
-    echo "     ${NGINX_ENABLED}"
-
+    echo "[OK] Nginx sites-enabled dihapus: $NGINX_ENABLED"
 else
-
-    echo "[INFO] Nginx sites-enabled tidak ditemukan:"
-    echo "       ${NGINX_ENABLED}"
-
+    echo "[INFO] Nginx sites-enabled tidak ditemukan: $NGINX_ENABLED"
 fi
 
 if [[ -f "$NGINX_AVAILABLE" || -L "$NGINX_AVAILABLE" ]]; then
-
     rm -f -- "$NGINX_AVAILABLE"
-
-    echo "[OK] Nginx sites-available dihapus:"
-    echo "     ${NGINX_AVAILABLE}"
-
+    echo "[OK] Nginx sites-available dihapus: $NGINX_AVAILABLE"
 else
+    echo "[INFO] Nginx sites-available tidak ditemukan: $NGINX_AVAILABLE"
+fi
 
-    echo "[INFO] Nginx sites-available tidak ditemukan:"
-    echo "       ${NGINX_AVAILABLE}"
+echo
+echo "[CHECK] Validasi konfigurasi Nginx..."
+if command -v nginx >/dev/null 2>&1 && nginx -t; then
+    echo "[OK] Konfigurasi Nginx valid."
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl reload nginx; then
+            echo "[OK] Nginx berhasil direload."
+        else
+            echo "[WARNING] Reload Nginx gagal. Lakukan reload manual."
+        fi
+    else
+        echo "[WARNING] systemctl tidak ditemukan. Reload Nginx manual diperlukan."
+    fi
+else
+    echo "[WARNING] nginx -t gagal atau binary nginx tidak ditemukan."
+    echo "[WARNING] Nginx tidak direload. Periksa konfigurasi secara manual."
+fi
 
+# ------------------------------------------------------------
+# Remove app-specific logs, socket, and registry
+# ------------------------------------------------------------
+
+echo
+echo "[INFO] Menghapus resource aplikasi di luar direktori aplikasi..."
+
+for file in "$NGINX_ACCESS_LOG" "$NGINX_ERROR_LOG"; do
+    if [[ -f "$file" || -L "$file" ]]; then
+        rm -f -- "$file"
+        echo "[OK] Nginx log dihapus: $file"
+    else
+        echo "[INFO] Nginx log tidak ditemukan: $file"
+    fi
+done
+
+if [[ -S "$PHP_SOCKET" || -e "$PHP_SOCKET" || -L "$PHP_SOCKET" ]]; then
+    rm -f -- "$PHP_SOCKET"
+    echo "[OK] PHP-FPM socket dihapus: $PHP_SOCKET"
+else
+    echo "[INFO] PHP-FPM socket tidak ditemukan: $PHP_SOCKET"
+fi
+
+if [[ -f "$APP_REGISTRY_FILE" || -L "$APP_REGISTRY_FILE" ]]; then
+    rm -f -- "$APP_REGISTRY_FILE"
+    echo "[OK] Application Registry dihapus: $APP_REGISTRY_FILE"
+else
+    echo "[INFO] Application Registry tidak ditemukan: $APP_REGISTRY_FILE"
 fi
 
 # ------------------------------------------------------------
@@ -572,12 +705,43 @@ else
 fi
 
 # ------------------------------------------------------------
+# Shared permission / ACL handling
+# ------------------------------------------------------------
+
+echo
+echo "[INFO] Memeriksa permission dan ACL shared..."
+
+OTHER_APP_DIRS=0
+if [[ -d "$APPS_DIR" ]]; then
+    while IFS= read -r -d '' dir; do
+        [[ "$dir" == "$APP_ROOT" ]] && continue
+        ((OTHER_APP_DIRS+=1))
+    done < <(find "$APPS_DIR" -mindepth 1 -maxdepth 1 -type d -print0)
+fi
+
+# create-php-app menambahkan ACL clamav pada /var/apps. Lepas hanya bila
+# tidak ada aplikasi lain yang tersisa agar aplikasi lain tidak terganggu.
+if (( OTHER_APP_DIRS == 0 )) && command -v setfacl >/dev/null 2>&1; then
+    if getfacl -cp "$APPS_DIR" 2>/dev/null | grep -q '^user:clamav:'; then
+        setfacl -x user:clamav "$APPS_DIR" 2>/dev/null || true
+        echo "[OK] ACL user clamav pada $APPS_DIR dilepas."
+    fi
+else
+    echo "[INFO] ACL $APPS_DIR dipertahankan karena masih ada aplikasi lain."
+fi
+
+# /run/php adalah direktori shared. Jangan mengubah owner/mode global karena
+# dapat dipakai PHP-FPM lain; snapshot kondisi awal tersimpan di backup.
+echo "[INFO] Permission /run/php dipertahankan sebagai direktori shared."
+echo "[INFO] Snapshot permission: $PERMISSION_BACKUP"
+
+# ------------------------------------------------------------
 # Final
 # ------------------------------------------------------------
 
 echo
 echo "============================================================"
-echo "[DONE] Aplikasi dan seluruh resource berhasil dihapus"
+echo "[DONE] Proses penghapusan aplikasi selesai"
 echo "============================================================"
 echo
 echo "Application : ${APP_NAME}"
