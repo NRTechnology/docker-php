@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.7.0"
+SCRIPT_VERSION="1.7.2"
 
 # ==============================================================================
 # create-php-app.sh
@@ -709,6 +709,26 @@ case "$FRAMEWORK" in
 
 esac
 
+# FIM memantau source aplikasi (htdocs) dan writable directory penting.
+# Session, cache, logs, dan backup sengaja dikecualikan karena bersifat
+# sementara, berisik, atau bukan bagian dari runtime source/data aktif.
+FIM_DIRECTORIES=(
+    "${APP_HTDOCS}"
+)
+case "$FRAMEWORK" in
+    laravel)
+        FIM_DIRECTORIES+=(
+            "${APP_STORAGE_APP}"
+            "${APP_STORAGE_FRAMEWORK}/views"
+        )
+        ;;
+    ci|generic)
+        FIM_DIRECTORIES+=(
+            "${APP_WRITABLE}/uploads"
+        )
+        ;;
+esac
+
 
 # ==============================================================================
 # CREATE DIRECTORIES
@@ -729,9 +749,11 @@ if [[ "$FRAMEWORK" == "laravel" ]]; then
         "$APP_COMPOSER" \
         "$APP_HTDOCS/public" \
         "$APP_STORAGE_APP/public" \
+        "$APP_STORAGE_FRAMEWORK/cache/data" \
+        "$APP_STORAGE_FRAMEWORK/sessions" \
         "$APP_STORAGE_FRAMEWORK/views" \
         "$APP_STORAGE_LOGS" \
-        "$APP_BOOTSTRAP_CACHE" \
+        "$APP_BOOTSTRAP_CACHE"
 
     # Laravel public storage symlink.
     ln -s ../storage/app/public "${APP_HTDOCS}/public/storage"
@@ -1445,6 +1467,161 @@ log "Registry aplikasi tersimpan: ${APP_REGISTRY_FILE}"
 
 
 # ==============================================================================
+# WAZUH AGENT FIM INTEGRATION
+# ==============================================================================
+
+FIM_STATUS="not-configured"
+FIM_BACKUP_FILE=""
+WAZUH_AGENT_CONFIG="/var/ossec/etc/ossec.conf"
+WAZUH_AGENTD="/var/ossec/bin/wazuh-agentd"
+
+configure_wazuh_fim() {
+    local path
+    local active_before=0
+    local backup_file
+    local validation_ok=1
+    local missing=0
+
+    # Tidak memantau seluruh /var/apps. Pantau htdocs dan writable penting
+    # yang dipilih sesuai framework. Session, cache, logs, dan backup dikecualikan.
+    if [[ ! -x "$WAZUH_AGENTD" || ! -f "$WAZUH_AGENT_CONFIG" ]]; then
+        warn "Wazuh Agent tidak ditemukan. Integrasi FIM dilewati."
+        FIM_STATUS="skipped-agent-not-installed"
+        return 0
+    fi
+
+    if systemctl is-active --quiet wazuh-agent; then
+        active_before=1
+    else
+        warn "Wazuh Agent terpasang tetapi tidak aktif. Konfigurasi akan divalidasi tanpa restart service."
+    fi
+
+    local -a existing_targets=()
+    for path in "${FIM_DIRECTORIES[@]}"; do
+        if [[ -d "$path" ]]; then
+            existing_targets+=("$path")
+        else
+            warn "Direktori FIM tidak ditemukan, dilewati: $path"
+        fi
+    done
+
+    if [[ ${#existing_targets[@]} -eq 0 ]]; then
+        warn "Tidak ada target directory yang memenuhi kriteria FIM."
+        FIM_STATUS="skipped-no-target"
+        return 0
+    fi
+
+    for path in "${existing_targets[@]}"; do
+        if ! grep -Eq "<directories[[:space:]][^>]*>?[[:space:]]*${path//\//\\/}[[:space:]]*</directories>" "$WAZUH_AGENT_CONFIG" 2>/dev/null; then
+            # Exact literal check also catches the standard generated element.
+            if ! grep -Fq ">$path</directories>" "$WAZUH_AGENT_CONFIG"; then
+                missing=1
+            fi
+        fi
+    done
+
+    if [[ "$missing" -eq 0 ]]; then
+        log "Semua target htdocs/writable sudah terdaftar pada Wazuh FIM."
+        FIM_STATUS="already-configured"
+        return 0
+    fi
+
+    backup_file="${WAZUH_AGENT_CONFIG}.pre-${SCRIPT_NAME}.${APP_NAME}.$(date +%Y%m%d-%H%M%S)"
+    if ! cp -a "$WAZUH_AGENT_CONFIG" "$backup_file"; then
+        warn "Gagal membuat backup ossec.conf. Integrasi FIM dilewati."
+        FIM_STATUS="failed-backup"
+        return 0
+    fi
+    FIM_BACKUP_FILE="$backup_file"
+
+    if ! FIM_TARGETS="$(printf '%s\n' "${existing_targets[@]}")" python3 - "$WAZUH_AGENT_CONFIG" <<'PY'
+import os
+import re
+import sys
+
+config = sys.argv[1]
+targets = [p for p in os.environ.get("FIM_TARGETS", "").splitlines() if p]
+with open(config, "r", encoding="utf-8") as f:
+    data = f.read()
+
+for path in targets:
+    pattern = re.compile(
+        r"<directories\b[^>]*>\s*" + re.escape(path) + r"\s*</directories>",
+        re.MULTILINE,
+    )
+    if pattern.search(data):
+        continue
+
+    entry = f'    <directories realtime="yes">{path}</directories>\n'
+    match = re.search(r"<syscheck\b[^>]*>", data)
+    if match:
+        pos = match.end()
+        data = data[:pos] + "\n" + entry.rstrip("\n") + data[pos:]
+    else:
+        closing = re.search(r"</ossec_config\s*>", data)
+        if not closing:
+            raise SystemExit("Tag </ossec_config> tidak ditemukan.")
+        block = "\n  <syscheck>\n" + entry + "  </syscheck>\n"
+        data = data[:closing.start()] + block + data[closing.start():]
+
+with open(config, "w", encoding="utf-8") as f:
+    f.write(data)
+PY
+    then
+        warn "Gagal memperbarui ossec.conf. Memulihkan backup."
+        cp -a "$backup_file" "$WAZUH_AGENT_CONFIG" || true
+        FIM_STATUS="failed-update"
+        return 0
+    fi
+
+    if command -v xmllint >/dev/null 2>&1; then
+        xmllint --noout "$WAZUH_AGENT_CONFIG" >/dev/null 2>&1 || validation_ok=0
+    else
+        python3 - "$WAZUH_AGENT_CONFIG" <<'PY' >/dev/null 2>&1 || validation_ok=0
+import sys
+import xml.etree.ElementTree as ET
+ET.parse(sys.argv[1])
+PY
+    fi
+
+    if [[ "$validation_ok" -eq 1 ]]; then
+        "$WAZUH_AGENTD" -t >/dev/null 2>&1 || validation_ok=0
+    fi
+
+    if [[ "$validation_ok" -ne 1 ]]; then
+        warn "Validasi konfigurasi Wazuh gagal. ossec.conf dipulihkan dari backup."
+        cp -a "$backup_file" "$WAZUH_AGENT_CONFIG" || true
+        FIM_STATUS="failed-validation-rolled-back"
+        return 0
+    fi
+
+    if [[ "$active_before" -eq 1 ]]; then
+        if systemctl restart wazuh-agent; then
+            FIM_STATUS="configured-and-restarted"
+            log "Wazuh Agent berhasil direstart setelah konfigurasi FIM diperbarui."
+        else
+            warn "Restart Wazuh Agent gagal. Memulihkan konfigurasi sebelumnya."
+            cp -a "$backup_file" "$WAZUH_AGENT_CONFIG" || true
+            systemctl restart wazuh-agent >/dev/null 2>&1 || true
+            FIM_STATUS="failed-restart-rolled-back"
+            return 0
+        fi
+    else
+        FIM_STATUS="configured-agent-inactive"
+        warn "FIM sudah ditambahkan dan valid. Jalankan systemctl restart wazuh-agent saat agent siap."
+    fi
+
+    log "Target Wazuh FIM untuk ${APP_NAME} (htdocs + writable penting):"
+    for path in "${existing_targets[@]}"; do
+        log "  ${path}"
+    done
+    log "Backup ossec.conf: ${backup_file}"
+}
+
+configure_wazuh_fim
+
+
+# ==============================================================================
 # FINAL SUMMARY
 # ==============================================================================
 
@@ -1494,6 +1671,8 @@ Disabled PHP: ${DISABLE_FUNCTIONS}
 Container   : ${CONTAINER_NAME}
 Healthcheck : php-fpm config + master process (PID 1)
 Registry    : ${APP_REGISTRY_FILE}
+Wazuh FIM   : ${FIM_STATUS}
+FIM Backup  : ${FIM_BACKUP_FILE:-"-"}
 Network     : ${NETWORK_NAME}
 Subnet      : ${NETWORK_SUBNET}
 Gateway     : ${NETWORK_GATEWAY}
@@ -1639,7 +1818,7 @@ fi)
 
    systemctl reload nginx
 
-12. Test domain:
+13. Test domain:
 
     curl -I http://${DOMAIN_NAME}
 
