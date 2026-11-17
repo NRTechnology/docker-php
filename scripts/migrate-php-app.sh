@@ -20,7 +20,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 SCRIPT_NAME="migrate-php-app.sh"
-SCRIPT_VERSION="1.2.0"
+SCRIPT_VERSION="1.3.0"
 
 DOCKER_APPS_DIR="/opt/docker-apps"
 REGISTRY_DIR="/var/lib/docker-php/monitoring/applications"
@@ -59,7 +59,9 @@ Perubahan yang dapat diterapkan:
   - Docker json-file log rotation (10m x 5), jika belum ada.
   - PHP-FPM healthcheck dasar, jika belum ada.
   - Application Registry JSON untuk aplikasi existing, jika metadata valid.
-  - Registry existing divalidasi dan dipertahankan; tidak ditimpa.
+  - FIM diaktifkan hanya jika source dan seluruh writable mount valid.
+  - Registry existing dipertahankan; hanya monitoring.fim yang dapat diaktifkan.
+  - Perubahan registry dicadangkan dan dapat dipulihkan dengan --rollback.
 
 Alur --apply:
   1. Backup Compose.
@@ -269,18 +271,14 @@ PY
 }
 
 write_registry() {
-    local app="$1" compose_file="$2" json="$3" service="$4"
+    local app="$1" compose_file="$2" json="$3" service="$4" backup_app="$5"
     mkdir -p "$REGISTRY_DIR"
     chmod 0750 "$(dirname "$REGISTRY_DIR")" "$REGISTRY_DIR"
-    python3 - "$app" "$compose_file" "$json" "$service" "$REGISTRY_DIR" <<'PY'
-import json, os, sys, tempfile
+    python3 - "$app" "$compose_file" "$json" "$service" "$REGISTRY_DIR" "$backup_app" <<'PY'
+import json, os, sys, tempfile, shutil
 from pathlib import Path
-
-app, compose_file, raw, service, outdir = sys.argv[1:]
-try:
-    obj = json.loads(raw)
-except Exception as exc:
-    raise SystemExit(f"Compose JSON tidak valid: {exc}")
+app, compose_file, raw, service, outdir, backup_dir = sys.argv[1:]
+obj = json.loads(raw)
 svc = (obj.get("services") or {}).get(service)
 if not isinstance(svc, dict):
     raise SystemExit(f"Service PHP '{service}' tidak ditemukan.")
@@ -306,13 +304,20 @@ for mount in svc.get("volumes") or []:
 if not source:
     raise SystemExit("Mount source /var/www/html tidak ditemukan; registry tidak dibuat.")
 
+compose_dir = Path(compose_file).resolve().parent
 source_path = Path(source)
 if not source_path.is_absolute():
-    source_path = Path(compose_file).parent / source_path
-source_path = str(source_path.resolve())
+    source_path = compose_dir / source_path
+source_path = source_path.resolve()
+writable_paths = []
+for item in writable:
+    p = Path(item)
+    if not p.is_absolute():
+        p = compose_dir / p
+    writable_paths.append(str(p.resolve()))
 
-framework = "unknown"
 targets = " ".join(str(m.get("target", "")) for m in (svc.get("volumes") or []) if isinstance(m, dict))
+framework = "unknown"
 if "/var/www/html/storage/app" in targets or "/var/www/html/bootstrap/cache" in targets:
     framework = "laravel"
 elif "/var/www/html/writable" in targets:
@@ -320,10 +325,23 @@ elif "/var/www/html/writable" in targets:
 elif "/var/www/html/data" in targets:
     framework = "generic"
 
+app_root = (Path("/var/apps") / app).resolve()
+def inside_app(path):
+    try:
+        path.relative_to(app_root)
+        return True
+    except ValueError:
+        return False
+
+source_valid = source_path.is_dir() and inside_app(source_path)
+writable_valid = bool(writable_paths) and all(
+    Path(p).is_dir() and inside_app(Path(p)) for p in writable_paths
+)
+fim_eligible = source_valid and writable_valid
 target = Path(outdir) / (app + ".json")
 os.makedirs(outdir, mode=0o750, exist_ok=True)
+backup_path = Path(backup_dir) / "registry-before.json"
 
-# Registry existing is application-owned metadata: validate, never overwrite.
 if target.exists():
     try:
         existing = json.loads(target.read_text())
@@ -335,45 +353,52 @@ if target.exists():
         "integration": "docker-php",
         "application": app,
         "container": container,
-        "source": source_path,
+        "source": str(source_path),
     }
-    mismatch = [key for key, value in expected.items() if existing.get(key) != value]
+    mismatch = [k for k, v in expected.items() if existing.get(k) != v]
     if mismatch:
         raise SystemExit("Registry existing tidak sesuai Compose pada field: " + ", ".join(mismatch) + ". Registry tidak diubah.")
     if not isinstance(existing.get("monitoring"), dict):
         raise SystemExit("Registry existing tidak memiliki object monitoring. Registry tidak diubah.")
-    print("EXISTS_VALID")
+    old_w = existing.get("writable")
+    old_list = [str(x) for x in old_w] if isinstance(old_w, list) else ([str(old_w)] if old_w else [])
+    if sorted(old_list) != sorted(writable_paths):
+        raise SystemExit("Registry existing writable tidak sesuai Compose. Registry tidak diubah.")
+    if fim_eligible and existing["monitoring"].get("fim") is not True:
+        backup_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(target, backup_path)
+        existing["monitoring"]["fim"] = True
+        fd, tmp = tempfile.mkstemp(prefix="." + app + ".", suffix=".tmp", dir=outdir)
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(existing, f, indent=2); f.write("\n"); f.flush(); os.fsync(f.fileno())
+            os.chmod(tmp, 0o640); os.replace(tmp, target)
+        finally:
+            if os.path.exists(tmp): os.unlink(tmp)
+        print("EXISTS_FIM_ENABLED")
+    elif existing["monitoring"].get("fim") is True:
+        print("EXISTS_VALID")
+    else:
+        print("EXISTS_FIM_NOT_ELIGIBLE")
 else:
     record = {
-        "integration": "docker-php",
-        "application": app,
-        "container": container,
-        "php_version": php,
-        "framework": framework,
-        "source": source_path,
-        "writable": writable[0] if len(writable) == 1 else (writable or None),
+        "integration": "docker-php", "application": app, "container": container,
+        "php_version": php, "framework": framework, "source": str(source_path),
+        "writable": writable_paths[0] if len(writable_paths) == 1 else writable_paths,
         "compose": str(Path(compose_file).resolve()),
         "monitoring": {
-            "fim": False,
-            "docker_health": bool(svc.get("healthcheck")),
-            "security": False,
-            "malware": False,
-            "php_fpm": False,
-        },
+            "fim": bool(fim_eligible), "docker_health": bool(svc.get("healthcheck")),
+            "security": False, "malware": False, "php_fpm": False
+        }
     }
     fd, tmp = tempfile.mkstemp(prefix="." + app + ".", suffix=".tmp", dir=outdir)
     try:
-        with os.fdopen(fd, "w") as handle:
-            json.dump(record, handle, indent=2)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(tmp, 0o640)
-        os.replace(tmp, target)
+        with os.fdopen(fd, "w") as f:
+            json.dump(record, f, indent=2); f.write("\n"); f.flush(); os.fsync(f.fileno())
+        os.chmod(tmp, 0o640); os.replace(tmp, target)
     finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-    print("CREATED")
+        if os.path.exists(tmp): os.unlink(tmp)
+    print("CREATED_FIM_ENABLED" if fim_eligible else "CREATED_FIM_DISABLED_PATH_INVALID")
 PY
 }
 
@@ -400,9 +425,15 @@ rollback_app() {
     original_name="$(basename "$latest")"
     local target="${DOCKER_APPS_DIR}/${app}/${original_name}"
     cp -a "$latest" "$target"
-    # Remove only a registry file created by this migration backup.
-    local marker="$(dirname "$latest")/registry-created.sha256"
-    if [[ -f "$marker" && -f "${REGISTRY_DIR}/${app}.json" ]]; then
+    # Restore a registry that this migration changed, or remove one it created.
+    local app_backup="$(dirname "$latest")"
+    local registry="${REGISTRY_DIR}/${app}.json"
+    if [[ -f "${app_backup}/registry-before.json" && -f "$registry" ]]; then
+        cp -a "${app_backup}/registry-before.json" "$registry"
+        log "Rollback ${app}: registry sebelum migrasi dipulihkan."
+    fi
+    local marker="${app_backup}/registry-created.sha256"
+    if [[ ! -f "${app_backup}/registry-before.json" && -f "$marker" && -f "$registry" ]]; then
         local expected actual
         expected="$(cat "$marker")"
         actual="$(sha256sum "${REGISTRY_DIR}/${app}.json" | awk '{print $1}')"
@@ -528,6 +559,9 @@ PY
         APPS_TO_UP+=("$app")
         log "${app}: Compose berhasil diperbarui dan divalidasi."
     else
+        # Keep a Compose snapshot even for registry-only changes so --rollback
+        # can locate this migration backup and restore registry-before.json.
+        cp -a "$compose_file" "$backup_app/$(basename "$compose_file")"
         log "${app}: tidak membutuhkan perubahan Compose; container tidak perlu di-up ulang."
     fi
 
@@ -539,19 +573,23 @@ PY
         ((failed+=1))
         continue
     fi
-    registry_result="$(write_registry "$app" "$compose_file" "$json_after" "$service")" || {
+    registry_result="$(write_registry "$app" "$compose_file" "$json_after" "$service" "$backup_app")" || {
         warn "${app}: gagal membuat registry."
         FAILED_APPS+=("$app:registry")
         ((failed+=1))
         continue
     }
-    if [[ "$registry_result" == "CREATED" ]]; then
+    if [[ "$registry_result" == "CREATED_FIM_ENABLED" || "$registry_result" == "CREATED_FIM_DISABLED_PATH_INVALID" ]]; then
         sha256sum "${REGISTRY_DIR}/${app}.json" | awk '{print $1}' > "${backup_app}/registry-created.sha256"
         chmod 0600 "${backup_app}/registry-created.sha256"
         ((registry_created+=1))
-        log "${app}: Application Registry berhasil dibuat."
+        log "${app}: Application Registry dibuat (${registry_result})."
+    elif [[ "$registry_result" == "EXISTS_FIM_ENABLED" ]]; then
+        log "${app}: Registry valid; hanya monitoring.fim diaktifkan. Container tidak direcreate."
     elif [[ "$registry_result" == "EXISTS_VALID" ]]; then
-        log "${app}: Application Registry existing valid; dipertahankan tanpa perubahan."
+        log "${app}: Registry valid; tidak ada perubahan."
+    elif [[ "$registry_result" == "EXISTS_FIM_NOT_ELIGIBLE" ]]; then
+        warn "${app}: FIM tidak diaktifkan karena source/writable path belum valid."
     else
         warn "${app}: status registry tidak dikenal: ${registry_result}"
         FAILED_APPS+=("$app:registry-result")
