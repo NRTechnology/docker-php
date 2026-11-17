@@ -16,9 +16,10 @@ set -Eeuo pipefail
 #   - Linux Malware Detect (LMD)
 #   - YARA
 #
-# Security tools are installed first. ClamAV and LMD can be enabled
-# automatically by the administrator. YARA is integrated into LMD
-# automatically and is not treated as a standalone service.
+# Security tools are installed first. ClamAV daemon and FreshClam
+# are installed but kept disabled by default. LMD can be enabled
+# by the administrator. YARA is integrated into LMD automatically
+# and is not treated as a standalone service.
 #
 # MariaDB Configuration:
 #   - bind-address = 0.0.0.0
@@ -34,7 +35,7 @@ set -Eeuo pipefail
 # ============================================================
 
 SCRIPT_NAME="$(basename "$0")"
-SCRIPT_VERSION="1.1.1"
+SCRIPT_VERSION="1.1.2"
 
 # Repository root and backup directory
 APP_ROOT="/opt/docker-php"
@@ -307,23 +308,38 @@ success "ACL tools tersedia:"
 info "setfacl : $(command -v setfacl)"
 info "getfacl : $(command -v getfacl)"
 
-# /var/apps is only a traversal point. No read/list permission is granted.
-# This allows the clamav user to reach application paths when a specific
-# application directory grants the required r-x ACL.
+# /var/apps is only a traversal point for ClamAV.
+# Never grant ClamAV read/list access globally at this level.
+# Per-application read/traverse permissions are handled by create-php-app.sh.
 if [[ ! -d /var/apps ]]; then
     info "Membuat /var/apps sebagai root aplikasi..."
     install -d -m 0755 /var/apps
 fi
 
 if id clamav >/dev/null 2>&1; then
+    # Remove any default ACL for ClamAV on /var/apps. Otherwise newly-created
+    # application directories could inherit global read/traverse permissions.
+    if getfacl -cpd /var/apps 2>/dev/null | grep -Eq '^user:clamav:'; then
+        setfacl -x d:u:clamav /var/apps
+        info "Default ACL ClamAV pada /var/apps dihapus."
+    fi
+
+    # The named-user ACL overrides broader 'other' permissions.
+    # Effective permission for clamav at /var/apps is traversal only.
     setfacl -m u:clamav:--x /var/apps
-    success "ACL traversal ClamAV pada /var/apps dikonfigurasi."
+
+    if getfacl -cp /var/apps | grep -Fqx 'user:clamav:--x'; then
+        success "ACL /var/apps untuk ClamAV diverifikasi: traversal only (--x)."
+    else
+        error "ACL traversal-only ClamAV gagal diterapkan pada /var/apps."
+        exit 1
+    fi
 else
     warning "User clamav belum tersedia. ACL /var/apps akan dikonfigurasi setelah ClamAV terinstall."
 fi
 
 info "ACL /var/apps:"
-getfacl -p /var/apps | sed -n '1,12p'
+getfacl -p /var/apps | sed -n '1,16p'
 
 # ------------------------------------------------------------
 # NGINX
@@ -959,32 +975,49 @@ else
 fi
 
 # ------------------------------------------------------------
-# CLAMAV FILESYSTEM ACL
+# CLAMAV SERVICE DEFAULT: DISABLED
 # ------------------------------------------------------------
-# The clamav system account is created by the clamav package. Apply the
-# minimal traversal ACL now as well, so a fresh installation and an
-# existing installation behave identically.
+# Package installation may start these services automatically.
+# Docker-PHP installs the packages but does not enable background
+# scanning services. The administrator can configure/enable them later.
+for service in clamav-daemon clamav-freshclam; do
+    if systemctl list-unit-files "${service}.service" --no-legend 2>/dev/null | grep -q "^${service}.service"; then
+        systemctl disable --now "${service}.service" >/dev/null 2>&1 || true
+        if systemctl is-active --quiet "${service}.service"; then
+            error "${service} masih aktif; gagal memastikan default disabled."
+            systemctl status "${service}.service" --no-pager -l || true
+            exit 1
+        fi
+        success "${service} dipastikan disabled dan stopped."
+    else
+        info "Unit ${service}.service belum tersedia; dilewati."
+    fi
+done
+
+# Re-apply and verify traversal-only ACL after ClamAV package creation.
+# No read/list permission is granted to ClamAV at /var/apps.
 if [[ ! -d /var/apps ]]; then
-    info "Membuat /var/apps sebagai root aplikasi..."
     install -d -m 0755 /var/apps
-    success "Directory /var/apps berhasil dibuat."
-else
-    success "Directory /var/apps sudah tersedia."
 fi
 
 if id clamav >/dev/null 2>&1; then
+    if getfacl -cpd /var/apps 2>/dev/null | grep -Eq '^user:clamav:'; then
+        setfacl -x d:u:clamav /var/apps
+    fi
     setfacl -m u:clamav:--x /var/apps
-    success "ACL traversal ClamAV pada /var/apps dikonfigurasi."
+    getfacl -cp /var/apps | grep -Fqx 'user:clamav:--x' ||
+        { error "ACL /var/apps bukan traversal-only."; exit 1; }
+    success "ACL ClamAV /var/apps: traversal only (--x)."
 else
     error "User clamav tidak ditemukan setelah instalasi ClamAV."
     exit 1
 fi
 
 info "ACL /var/apps:"
-getfacl -p /var/apps | sed -n '1,12p'
+getfacl -p /var/apps | sed -n '1,16p'
 
-# Ensure the signature database is available, but do not start the
-# scanning daemon automatically before the administrator decides.
+# Ensure the signature database is available using a one-shot update.
+# The FreshClam background service remains disabled.
 if command -v freshclam >/dev/null 2>&1; then
     info "Memastikan database signature ClamAV tersedia..."
 
@@ -1127,20 +1160,13 @@ fi
 
 section "SECURITY TOOL ENABLEMENT"
 
+# ClamAV packages are installed but both background services remain
+# disabled by default. No interactive enablement prompt is presented.
 CLAMAV_ENABLED="NO"
 LMD_ENABLED="NO"
 YARA_INTEGRATED="NO"
 
-echo
-read -r -p "Aktifkan ClamAV otomatis? [y/N]: " ENABLE_CLAMAV
-case "${ENABLE_CLAMAV,,}" in
-    y|yes)
-        CLAMAV_ENABLED="YES"
-        ;;
-    *)
-        CLAMAV_ENABLED="NO"
-        ;;
-esac
+info "ClamAV daemon dan FreshClam tetap installed / disabled (default)."
 
 echo
 read -r -p "Aktifkan LMD otomatis? [y/N]: " ENABLE_LMD
@@ -1154,21 +1180,12 @@ case "${ENABLE_LMD,,}" in
 esac
 
 # ClamAV:
-# YES = enable FreshClam and ClamAV daemon.
-# NO  = keep the packages installed but do not run the services.
-if [[ "${CLAMAV_ENABLED}" == "YES" ]]; then
-    info "Mengaktifkan ClamAV daemon dan FreshClam..."
-
-    systemctl enable --now clamav-freshclam 2>/dev/null || true
-    systemctl enable --now clamav-daemon 2>/dev/null || true
-
-    success "ClamAV diaktifkan."
-else
-    info "ClamAV tetap terinstall tetapi tidak diaktifkan."
-
-    systemctl disable --now clamav-daemon 2>/dev/null || true
-    systemctl disable --now clamav-freshclam 2>/dev/null || true
-fi
+# Always remain installed but disabled. Do not enable clamav-daemon
+# or clamav-freshclam from this installer.
+CLAMAV_ENABLED="NO"
+for service in clamav-daemon clamav-freshclam; do
+    systemctl disable --now "${service}.service" 2>/dev/null || true
+done
 
 # LMD:
 # LMD's upstream installer installs cron/systemd integration. To honor
