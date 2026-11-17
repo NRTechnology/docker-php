@@ -8,8 +8,10 @@
 # changes (Docker log rotation and PHP-FPM healthcheck).
 #
 # IMPORTANT:
-# - Does not start/recreate containers.
+# - Only runs docker compose up -d when --apply changes a Compose file.
 # - Does not modify Nginx, databases, volumes, networks, Wazuh Agent, or groups.
+# - Creates/validates Application Registry for existing Docker-PHP applications.
+# - Never installs or changes Wazuh Agent configuration.
 # - Does not remove unknown Compose settings.
 # - Uses text-preserving insertion for missing service-level YAML keys.
 # - A per-application backup is created before every changed Compose file.
@@ -18,7 +20,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 SCRIPT_NAME="migrate-php-app.sh"
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.2.0"
 
 DOCKER_APPS_DIR="/opt/docker-apps"
 REGISTRY_DIR="/var/lib/docker-php/monitoring/applications"
@@ -56,19 +58,24 @@ Usage:
 Perubahan yang dapat diterapkan:
   - Docker json-file log rotation (10m x 5), jika belum ada.
   - PHP-FPM healthcheck dasar, jika belum ada.
-  - Application Registry JSON, jika metadata dapat ditentukan.
+  - Application Registry JSON untuk aplikasi existing, jika metadata valid.
+  - Registry existing divalidasi dan dipertahankan; tidak ditimpa.
 
 Alur --apply:
   1. Backup Compose.
   2. Tambahkan logging/healthcheck yang belum ada.
   3. Validasi seluruh Compose yang diproses.
-  4. Jika semua validasi berhasil, jalankan docker compose up -d
+  4. Buat registry untuk aplikasi existing yang belum memilikinya,
+     atau validasi registry existing tanpa mengubah isinya.
+  5. Jika semua validasi berhasil, jalankan docker compose up -d
      untuk aplikasi yang Compose-nya berubah.
-  5. Buat report TXT dan JSON.
+  6. Buat report TXT dan JSON.
 
 Batasan:
   - docker compose up -d dapat recreate container aplikasi yang berubah.
   - Tidak mengubah Nginx, database, volume, network, Wazuh Agent/group.
+  - Tidak memasang Agent atau mengubah konfigurasi Agent; itu tugas install-agent.sh.
+  - install-agent.sh hanya membaca dan mengintegrasikan registry yang sudah disiapkan.
   - Tidak mengganti konfigurasi logging/healthcheck yang sudah ada.
   - Compose yang gagal divalidasi akan dikembalikan dari backup.
 EOF
@@ -187,12 +194,13 @@ print(f"  no-new-privileges: {'OK' if sec else 'MISSING'}")
 print(f"  Resource limits : {'PRESENT' if limits else 'REVIEW'}")
 print(f"  Source mount    : {source or 'UNKNOWN'}")
 print(f"  Writable mount  : {writable or 'UNKNOWN'}")
-print(f"  Registry        : {'EXISTS' if os.path.isfile(registry) else 'MISSING'}")
+print(f"  Registry        : {'EXISTS (validate/preserve)' if os.path.isfile(registry) else 'MISSING (create on --apply)'}")
 changes=[]
 if not logging: changes.append("Add Docker log rotation")
 elif not log_ok: changes.append("Logging exists but differs; preserve (manual review)")
 if not health_ok: changes.append("Add basic PHP-FPM healthcheck")
-if not os.path.isfile(registry): changes.append("Create Application Registry")
+if not os.path.isfile(registry): changes.append("Create Application Registry for existing app")
+else: changes.append("Validate and preserve existing Application Registry")
 print("  Planned         : "+("; ".join(changes) if changes else "No change required"))
 PY
 }
@@ -266,62 +274,105 @@ write_registry() {
     chmod 0750 "$(dirname "$REGISTRY_DIR")" "$REGISTRY_DIR"
     python3 - "$app" "$compose_file" "$json" "$service" "$REGISTRY_DIR" <<'PY'
 import json, os, sys, tempfile
-app, compose_file, raw, service, outdir=sys.argv[1:]
-obj=json.loads(raw); svc=(obj.get("services") or {}).get(service) or {}
-image=str(svc.get("image") or "")
-php=image.split(":",1)[1] if ":" in image else "unknown"
-container=str(svc.get("container_name") or app+"-php")
-source=""
-writable=[]
-for m in svc.get("volumes") or []:
-    if not isinstance(m,dict): continue
-    dst=str(m.get("target") or "")
-    src=str(m.get("source") or "")
-    if dst=="/var/www/html": source=src
-    if not m.get("read_only",False) and (
-        dst.endswith("/data") or dst.endswith("/writable") or
-        "/storage/" in dst or dst.endswith("/bootstrap/cache")
+from pathlib import Path
+
+app, compose_file, raw, service, outdir = sys.argv[1:]
+try:
+    obj = json.loads(raw)
+except Exception as exc:
+    raise SystemExit(f"Compose JSON tidak valid: {exc}")
+svc = (obj.get("services") or {}).get(service)
+if not isinstance(svc, dict):
+    raise SystemExit(f"Service PHP '{service}' tidak ditemukan.")
+image = str(svc.get("image") or "")
+if not image.startswith("local/php:"):
+    raise SystemExit(f"Image service '{service}' bukan local/php.")
+php = image.split(":", 1)[1] if ":" in image else "unknown"
+container = str(svc.get("container_name") or app + "-php")
+source = ""
+writable = []
+for mount in svc.get("volumes") or []:
+    if not isinstance(mount, dict):
+        continue
+    dst = str(mount.get("target") or "")
+    src = str(mount.get("source") or "")
+    if dst == "/var/www/html":
+        source = src
+    if src and not mount.get("read_only", False) and (
+        dst.endswith("/data") or dst.endswith("/writable")
+        or "/storage/" in dst or dst.endswith("/bootstrap/cache")
     ):
         writable.append(src)
-targets=" ".join(str(m.get("target","")) for m in svc.get("volumes") or [] if isinstance(m,dict))
-framework="unknown"
+if not source:
+    raise SystemExit("Mount source /var/www/html tidak ditemukan; registry tidak dibuat.")
+
+source_path = Path(source)
+if not source_path.is_absolute():
+    source_path = Path(compose_file).parent / source_path
+source_path = str(source_path.resolve())
+
+framework = "unknown"
+targets = " ".join(str(m.get("target", "")) for m in (svc.get("volumes") or []) if isinstance(m, dict))
 if "/var/www/html/storage/app" in targets or "/var/www/html/bootstrap/cache" in targets:
-    framework="laravel"
+    framework = "laravel"
 elif "/var/www/html/writable" in targets:
-    framework="ci"
+    framework = "ci"
 elif "/var/www/html/data" in targets:
-    framework="generic"
-record={
- "integration":"docker-php",
- "application":app,
- "container":container,
- "php_version":php,
- "framework":framework,
- "source":source or None,
- "writable":writable[0] if len(writable)==1 else writable or None,
- "compose":compose_file,
- "monitoring":{
-  "fim":False,
-  "docker_health":bool(svc.get("healthcheck")),
-  "security":False,
-  "malware":False,
-  "php_fpm":False
- }
-}
-os.makedirs(outdir,exist_ok=True)
-target=os.path.join(outdir,app+".json")
-# Do not overwrite an existing registry; preserve operator-maintained metadata.
-if os.path.exists(target):
-    print("EXISTS")
-else:
-    fd,tmp=tempfile.mkstemp(prefix="."+app+".",suffix=".tmp",dir=outdir)
+    framework = "generic"
+
+target = Path(outdir) / (app + ".json")
+os.makedirs(outdir, mode=0o750, exist_ok=True)
+
+# Registry existing is application-owned metadata: validate, never overwrite.
+if target.exists():
     try:
-        with os.fdopen(fd,"w") as f:
-            json.dump(record,f,indent=2); f.write("\n"); f.flush(); os.fsync(f.fileno())
-        os.chmod(tmp,0o640)
-        os.replace(tmp,target)
+        existing = json.loads(target.read_text())
+    except Exception as exc:
+        raise SystemExit(f"Registry existing bukan JSON valid: {exc}")
+    if not isinstance(existing, dict):
+        raise SystemExit("Registry existing harus berupa JSON object.")
+    expected = {
+        "integration": "docker-php",
+        "application": app,
+        "container": container,
+        "source": source_path,
+    }
+    mismatch = [key for key, value in expected.items() if existing.get(key) != value]
+    if mismatch:
+        raise SystemExit("Registry existing tidak sesuai Compose pada field: " + ", ".join(mismatch) + ". Registry tidak diubah.")
+    if not isinstance(existing.get("monitoring"), dict):
+        raise SystemExit("Registry existing tidak memiliki object monitoring. Registry tidak diubah.")
+    print("EXISTS_VALID")
+else:
+    record = {
+        "integration": "docker-php",
+        "application": app,
+        "container": container,
+        "php_version": php,
+        "framework": framework,
+        "source": source_path,
+        "writable": writable[0] if len(writable) == 1 else (writable or None),
+        "compose": str(Path(compose_file).resolve()),
+        "monitoring": {
+            "fim": False,
+            "docker_health": bool(svc.get("healthcheck")),
+            "security": False,
+            "malware": False,
+            "php_fpm": False,
+        },
+    }
+    fd, tmp = tempfile.mkstemp(prefix="." + app + ".", suffix=".tmp", dir=outdir)
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(record, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, 0o640)
+        os.replace(tmp, target)
     finally:
-        if os.path.exists(tmp): os.unlink(tmp)
+        if os.path.exists(tmp):
+            os.unlink(tmp)
     print("CREATED")
 PY
 }
@@ -410,6 +461,8 @@ printf '\n============================================================\n'
 printf ' DOCKER-PHP BATCH MIGRATION SCAN v%s\n' "$SCRIPT_VERSION"
 printf ' Directory: %s\n' "$DOCKER_APPS_DIR"
 printf ' Mode     : %s\n' "$MODE"
+printf ' Registry : create for existing apps; validate/preserve if present\n'
+printf ' Agent    : not installed or modified by this script\n'
 printf '============================================================\n\n'
 
 shopt -s nullglob
@@ -496,9 +549,16 @@ PY
         sha256sum "${REGISTRY_DIR}/${app}.json" | awk '{print $1}' > "${backup_app}/registry-created.sha256"
         chmod 0600 "${backup_app}/registry-created.sha256"
         ((registry_created+=1))
+        log "${app}: Application Registry berhasil dibuat."
+    elif [[ "$registry_result" == "EXISTS_VALID" ]]; then
+        log "${app}: Application Registry existing valid; dipertahankan tanpa perubahan."
+    else
+        warn "${app}: status registry tidak dikenal: ${registry_result}"
+        FAILED_APPS+=("$app:registry-result")
+        ((failed+=1))
+        continue
     fi
     VALIDATED_APPS+=("$app")
-    log "${app}: registry ${registry_result}."
 done
 
 # Start/recreate only after every eligible application's Compose is valid.
