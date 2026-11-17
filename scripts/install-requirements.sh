@@ -17,9 +17,9 @@ set -Eeuo pipefail
 #   - YARA
 #
 # Security tools are installed first. ClamAV daemon and FreshClam
-# are installed but kept disabled by default. LMD can be enabled
-# by the administrator. YARA is integrated into LMD automatically
-# and is not treated as a standalone service.
+# are kept disabled by default. LMD is installed and its scheduled
+# scanning/service defaults are retained/enabled. YARA is integrated
+# into LMD automatically and is not treated as a standalone service.
 #
 # MariaDB Configuration:
 #   - bind-address = 0.0.0.0
@@ -35,7 +35,7 @@ set -Eeuo pipefail
 # ============================================================
 
 SCRIPT_NAME="$(basename "$0")"
-SCRIPT_VERSION="1.1.2"
+SCRIPT_VERSION="1.1.3"
 
 # Repository root and backup directory
 APP_ROOT="/opt/docker-php"
@@ -1161,23 +1161,12 @@ fi
 section "SECURITY TOOL ENABLEMENT"
 
 # ClamAV packages are installed but both background services remain
-# disabled by default. No interactive enablement prompt is presented.
+# disabled by default. LMD is installed and enabled without prompting.
 CLAMAV_ENABLED="NO"
-LMD_ENABLED="NO"
+LMD_ENABLED="YES"
 YARA_INTEGRATED="NO"
 
 info "ClamAV daemon dan FreshClam tetap installed / disabled (default)."
-
-echo
-read -r -p "Aktifkan LMD otomatis? [y/N]: " ENABLE_LMD
-case "${ENABLE_LMD,,}" in
-    y|yes)
-        LMD_ENABLED="YES"
-        ;;
-    *)
-        LMD_ENABLED="NO"
-        ;;
-esac
 
 # ClamAV:
 # Always remain installed but disabled. Do not enable clamav-daemon
@@ -1188,25 +1177,25 @@ for service in clamav-daemon clamav-freshclam; do
 done
 
 # LMD:
-# LMD's upstream installer installs cron/systemd integration. To honor
-# "install != enable", disable the service and daily scan when declined.
+# Keep LMD's scheduled scanning enabled and enable its service when
+# the upstream package provides the corresponding systemd unit.
+# Do not disable or stop LMD as part of this installer.
 if [[ -f /usr/local/maldetect/conf.maldet ]]; then
-    if [[ "${LMD_ENABLED}" == "YES" ]]; then
+    if grep -Eq '^[[:space:]]*cron_daily_scan[[:space:]]*=' /usr/local/maldetect/conf.maldet; then
         sed -i -E 's/^[[:space:]]*cron_daily_scan[[:space:]]*=.*/cron_daily_scan=1/' \
             /usr/local/maldetect/conf.maldet
-        sed -i -E 's/^[[:space:]]*default_monitor_mode[[:space:]]*=.*/default_monitor_mode=""/' \
-            /usr/local/maldetect/conf.maldet || true
-
-        systemctl enable --now maldet.service 2>/dev/null || true
-        success "LMD diaktifkan."
-        info "Real-time monitoring LMD belum diarahkan ke directory aplikasi."
     else
-        sed -i -E 's/^[[:space:]]*cron_daily_scan[[:space:]]*=.*/cron_daily_scan=0/' \
-            /usr/local/maldetect/conf.maldet
-
-        systemctl disable --now maldet.service 2>/dev/null || true
-        success "LMD tetap terinstall tetapi scanning otomatis dinonaktifkan."
+        printf '\ncron_daily_scan=1\n' >> /usr/local/maldetect/conf.maldet
     fi
+
+    if systemctl list-unit-files maldet.service --no-legend 2>/dev/null | grep -q '^maldet.service'; then
+        systemctl enable --now maldet.service
+        success "LMD service dipastikan enabled dan running."
+    else
+        info "Unit maldet.service tidak tersedia; konfigurasi scheduled scan LMD tetap aktif."
+    fi
+    success "LMD terinstall; scheduled scanning diaktifkan."
+    info "Real-time monitoring LMD belum diarahkan ke directory aplikasi."
 fi
 
 # ------------------------------------------------------------
