@@ -20,7 +20,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 SCRIPT_NAME="migrate-php-app.sh"
-SCRIPT_VERSION="1.3.0"
+SCRIPT_VERSION="1.3.1"
 
 DOCKER_APPS_DIR="/opt/docker-apps"
 REGISTRY_DIR="/var/lib/docker-php/monitoring/applications"
@@ -60,15 +60,19 @@ Perubahan yang dapat diterapkan:
   - PHP-FPM healthcheck dasar, jika belum ada.
   - Application Registry JSON untuk aplikasi existing, jika metadata valid.
   - FIM diaktifkan hanya jika source dan seluruh writable mount valid.
-  - Registry existing dipertahankan; hanya monitoring.fim yang dapat diaktifkan.
+  - Registry existing yang valid dan sesuai Compose dipertahankan.
+  - Registry valid dengan writable berbeda diperbarui hanya pada field writable,
+    setelah backup; metadata lainnya dipertahankan.
+  - Registry invalid tidak pernah ditimpa otomatis.
   - Perubahan registry dicadangkan dan dapat dipulihkan dengan --rollback.
 
 Alur --apply:
   1. Backup Compose.
   2. Tambahkan logging/healthcheck yang belum ada.
   3. Validasi seluruh Compose yang diproses.
-  4. Buat registry untuk aplikasi existing yang belum memilikinya,
-     atau validasi registry existing tanpa mengubah isinya.
+  4. Buat registry jika belum ada; registry existing diklasifikasikan:
+     valid/sesuai, valid tetapi writable berbeda (diperbarui saat --apply
+     dengan backup), atau invalid (tidak ditimpa).
   5. Jika semua validasi berhasil, jalankan docker compose up -d
      untuk aplikasi yang Compose-nya berubah.
   6. Buat report TXT dan JSON.
@@ -183,6 +187,33 @@ elif "/var/www/html/writable" in targets:
 elif "/var/www/html/data" in targets:
     framework="generic"
 registry=os.path.join("/var/lib/docker-php/monitoring/applications", app+".json")
+registry_status = "MISSING (create on --apply)"
+if os.path.isfile(registry):
+    try:
+        existing=json.load(open(registry, encoding="utf-8"))
+        app_root=os.path.realpath(os.path.join("/var/apps", app))
+        expected_source=os.path.realpath(source) if source else ""
+        expected_writable=sorted(os.path.realpath(x) for x in writable.split(";") if x)
+        old_w=existing.get("writable") if isinstance(existing,dict) else None
+        old_list=old_w if isinstance(old_w,list) else ([old_w] if isinstance(old_w,str) and old_w else [])
+        old_list=sorted(os.path.realpath(x) for x in old_list if isinstance(x,str))
+        core_ok=(isinstance(existing,dict) and existing.get("integration")=="docker-php"
+            and existing.get("application")==app and existing.get("container")==container
+            and existing.get("source")==expected_source
+            and isinstance(existing.get("monitoring"),dict) and bool(old_list))
+        def inside(path):
+            try: return os.path.commonpath([app_root,path])==app_root
+            except ValueError: return False
+        paths_ok=bool(expected_writable) and all(os.path.isdir(x) and inside(x) for x in expected_writable)
+        old_paths_ok=all(os.path.isdir(x) and inside(x) for x in old_list)
+        if not core_ok or not paths_ok or not old_paths_ok:
+            registry_status="INVALID (will not overwrite)"
+        elif old_list == expected_writable:
+            registry_status="VALID (preserve)"
+        else:
+            registry_status="VALID, WRITABLE DIFFERS (repair on --apply)"
+    except Exception:
+        registry_status="INVALID (will not overwrite)"
 print(f"Application       : {app}")
 print(f"  Compose         : {compose_file}")
 print(f"  PHP service     : {service}")
@@ -196,13 +227,13 @@ print(f"  no-new-privileges: {'OK' if sec else 'MISSING'}")
 print(f"  Resource limits : {'PRESENT' if limits else 'REVIEW'}")
 print(f"  Source mount    : {source or 'UNKNOWN'}")
 print(f"  Writable mount  : {writable or 'UNKNOWN'}")
-print(f"  Registry        : {'EXISTS (validate/preserve)' if os.path.isfile(registry) else 'MISSING (create on --apply)'}")
+print(f"  Registry        : {registry_status}")
 changes=[]
 if not logging: changes.append("Add Docker log rotation")
 elif not log_ok: changes.append("Logging exists but differs; preserve (manual review)")
 if not health_ok: changes.append("Add basic PHP-FPM healthcheck")
 if not os.path.isfile(registry): changes.append("Create Application Registry for existing app")
-else: changes.append("Validate and preserve existing Application Registry")
+else: changes.append("Classify existing Registry; repair writable only if safely mismatched")
 print("  Planned         : "+("; ".join(changes) if changes else "No change required"))
 PY
 }
@@ -278,126 +309,100 @@ write_registry() {
 import json, os, sys, tempfile, shutil
 from pathlib import Path
 app, compose_file, raw, service, outdir, backup_dir = sys.argv[1:]
-obj = json.loads(raw)
-svc = (obj.get("services") or {}).get(service)
-if not isinstance(svc, dict):
-    raise SystemExit(f"Service PHP '{service}' tidak ditemukan.")
-image = str(svc.get("image") or "")
-if not image.startswith("local/php:"):
-    raise SystemExit(f"Image service '{service}' bukan local/php.")
-php = image.split(":", 1)[1] if ":" in image else "unknown"
-container = str(svc.get("container_name") or app + "-php")
-source = ""
-writable = []
+obj=json.loads(raw); svc=(obj.get("services") or {}).get(service)
+if not isinstance(svc,dict): raise SystemExit(f"Service PHP '{service}' tidak ditemukan.")
+image=str(svc.get("image") or "")
+if not image.startswith("local/php:"): raise SystemExit(f"Image service '{service}' bukan local/php.")
+php=image.split(":",1)[1] if ":" in image else "unknown"
+container=str(svc.get("container_name") or app+"-php")
+compose_path=Path(compose_file).resolve(); compose_dir=compose_path.parent
+def host_path(value):
+    p=Path(value)
+    if not p.is_absolute(): p=compose_dir/p
+    return p.resolve()
+source_values=[]; writable_values=[]
 for mount in svc.get("volumes") or []:
-    if not isinstance(mount, dict):
-        continue
-    dst = str(mount.get("target") or "")
-    src = str(mount.get("source") or "")
-    if dst == "/var/www/html":
-        source = src
-    if src and not mount.get("read_only", False) and (
-        dst.endswith("/data") or dst.endswith("/writable")
-        or "/storage/" in dst or dst.endswith("/bootstrap/cache")
-    ):
-        writable.append(src)
-if not source:
-    raise SystemExit("Mount source /var/www/html tidak ditemukan; registry tidak dibuat.")
-
-compose_dir = Path(compose_file).resolve().parent
-source_path = Path(source)
-if not source_path.is_absolute():
-    source_path = compose_dir / source_path
-source_path = source_path.resolve()
-writable_paths = []
-for item in writable:
-    p = Path(item)
-    if not p.is_absolute():
-        p = compose_dir / p
-    writable_paths.append(str(p.resolve()))
-
-targets = " ".join(str(m.get("target", "")) for m in (svc.get("volumes") or []) if isinstance(m, dict))
-framework = "unknown"
-if "/var/www/html/storage/app" in targets or "/var/www/html/bootstrap/cache" in targets:
-    framework = "laravel"
-elif "/var/www/html/writable" in targets:
-    framework = "ci"
-elif "/var/www/html/data" in targets:
-    framework = "generic"
-
-app_root = (Path("/var/apps") / app).resolve()
+    if not isinstance(mount,dict): continue
+    dst=str(mount.get("target") or ""); src=str(mount.get("source") or "")
+    if dst=="/var/www/html" and src: source_values.append(host_path(src))
+    if src and not mount.get("read_only",False) and (
+        dst.endswith("/data") or dst.endswith("/writable") or "/storage/" in dst
+        or dst.endswith("/bootstrap/cache")):
+        writable_values.append(host_path(src))
+if len(source_values)!=1:
+    raise SystemExit("Mount source /var/www/html tidak ditemukan atau ambigu; registry tidak diubah.")
+source_path=source_values[0]
+writable_paths=sorted({str(p) for p in writable_values})
+if not writable_paths: raise SystemExit("Tidak ada writable mount yang dikenali; registry tidak diubah.")
+app_root=(Path("/var/apps")/app).resolve()
 def inside_app(path):
+    try: Path(path).relative_to(app_root); return True
+    except ValueError: return False
+source_valid=source_path.is_dir() and inside_app(source_path)
+writable_valid=all(Path(p).is_dir() and inside_app(p) for p in writable_paths)
+fim_eligible=source_valid and writable_valid
+targets=" ".join(str(m.get("target","")) for m in (svc.get("volumes") or []) if isinstance(m,dict))
+framework="unknown"
+if "/var/www/html/storage/app" in targets or "/var/www/html/bootstrap/cache" in targets: framework="laravel"
+elif "/var/www/html/writable" in targets: framework="ci"
+elif "/var/www/html/data" in targets: framework="generic"
+target=Path(outdir)/(app+".json"); target.parent.mkdir(parents=True,mode=0o750,exist_ok=True)
+backup_path=Path(backup_dir)/"registry-before.json"
+def atomic_write(record):
+    fd,tmp=tempfile.mkstemp(prefix="."+app+".",suffix=".tmp",dir=outdir)
     try:
-        path.relative_to(app_root)
-        return True
-    except ValueError:
-        return False
-
-source_valid = source_path.is_dir() and inside_app(source_path)
-writable_valid = bool(writable_paths) and all(
-    Path(p).is_dir() and inside_app(Path(p)) for p in writable_paths
-)
-fim_eligible = source_valid and writable_valid
-target = Path(outdir) / (app + ".json")
-os.makedirs(outdir, mode=0o750, exist_ok=True)
-backup_path = Path(backup_dir) / "registry-before.json"
-
-if target.exists():
-    try:
-        existing = json.loads(target.read_text())
-    except Exception as exc:
-        raise SystemExit(f"Registry existing bukan JSON valid: {exc}")
-    if not isinstance(existing, dict):
-        raise SystemExit("Registry existing harus berupa JSON object.")
-    expected = {
-        "integration": "docker-php",
-        "application": app,
-        "container": container,
-        "source": str(source_path),
-    }
-    mismatch = [k for k, v in expected.items() if existing.get(k) != v]
-    if mismatch:
-        raise SystemExit("Registry existing tidak sesuai Compose pada field: " + ", ".join(mismatch) + ". Registry tidak diubah.")
-    if not isinstance(existing.get("monitoring"), dict):
-        raise SystemExit("Registry existing tidak memiliki object monitoring. Registry tidak diubah.")
-    old_w = existing.get("writable")
-    old_list = [str(x) for x in old_w] if isinstance(old_w, list) else ([str(old_w)] if old_w else [])
-    if sorted(old_list) != sorted(writable_paths):
-        raise SystemExit("Registry existing writable tidak sesuai Compose. Registry tidak diubah.")
-    if fim_eligible and existing["monitoring"].get("fim") is not True:
-        backup_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(target, backup_path)
-        existing["monitoring"]["fim"] = True
-        fd, tmp = tempfile.mkstemp(prefix="." + app + ".", suffix=".tmp", dir=outdir)
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(existing, f, indent=2); f.write("\n"); f.flush(); os.fsync(f.fileno())
-            os.chmod(tmp, 0o640); os.replace(tmp, target)
-        finally:
-            if os.path.exists(tmp): os.unlink(tmp)
-        print("EXISTS_FIM_ENABLED")
-    elif existing["monitoring"].get("fim") is True:
-        print("EXISTS_VALID")
-    else:
-        print("EXISTS_FIM_NOT_ELIGIBLE")
-else:
-    record = {
-        "integration": "docker-php", "application": app, "container": container,
-        "php_version": php, "framework": framework, "source": str(source_path),
-        "writable": writable_paths[0] if len(writable_paths) == 1 else writable_paths,
-        "compose": str(Path(compose_file).resolve()),
-        "monitoring": {
-            "fim": bool(fim_eligible), "docker_health": bool(svc.get("healthcheck")),
-            "security": False, "malware": False, "php_fpm": False
-        }
-    }
-    fd, tmp = tempfile.mkstemp(prefix="." + app + ".", suffix=".tmp", dir=outdir)
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(record, f, indent=2); f.write("\n"); f.flush(); os.fsync(f.fileno())
-        os.chmod(tmp, 0o640); os.replace(tmp, target)
+        with os.fdopen(fd,"w",encoding="utf-8") as f:
+            json.dump(record,f,indent=2,ensure_ascii=False); f.write("\n"); f.flush(); os.fsync(f.fileno())
+        os.chmod(tmp,0o640); os.replace(tmp,target)
     finally:
         if os.path.exists(tmp): os.unlink(tmp)
+def normalize_writable(value):
+    if isinstance(value,str) and value: values=[value]
+    elif isinstance(value,list) and value and all(isinstance(x,str) and x for x in value): values=value
+    else: return None
+    try: return sorted({str(Path(x).resolve(strict=True)) for x in values})
+    except (OSError,RuntimeError): return None
+if target.exists():
+    # CONDITION 3: invalid registry; never overwrite automatically.
+    try: existing=json.loads(target.read_text(encoding="utf-8"))
+    except Exception as exc: raise SystemExit(f"REGISTRY_INVALID: JSON tidak valid ({exc}); registry tidak diubah.")
+    if not isinstance(existing,dict):
+        raise SystemExit("REGISTRY_INVALID: root registry harus JSON object; registry tidak diubah.")
+    required={"integration":"docker-php","application":app,"container":container,"source":str(source_path)}
+    mismatch=[k for k,v in required.items() if existing.get(k)!=v]
+    if mismatch:
+        raise SystemExit("REGISTRY_INVALID: field inti tidak sesuai Compose ("+", ".join(mismatch)+"); registry tidak diubah.")
+    if not isinstance(existing.get("monitoring"),dict):
+        raise SystemExit("REGISTRY_INVALID: object monitoring tidak valid; registry tidak diubah.")
+    if not source_valid or not writable_valid:
+        raise SystemExit("REGISTRY_INVALID: source/writable Compose harus berupa direktori yang ada di dalam /var/apps/"+app+"; registry tidak diubah.")
+    old_writable=normalize_writable(existing.get("writable"))
+    if old_writable is None:
+        raise SystemExit("REGISTRY_INVALID: field writable kosong/tidak valid atau path tidak tersedia; registry tidak diubah.")
+    if old_writable==writable_paths:
+        # CONDITION 1: valid and exact; preserve all metadata.
+        if fim_eligible and existing["monitoring"].get("fim") is not True:
+            backup_path.parent.mkdir(parents=True,exist_ok=True)
+            if not backup_path.exists(): shutil.copy2(target,backup_path)
+            existing["monitoring"]["fim"]=True; atomic_write(existing)
+            print("EXISTS_FIM_ENABLED")
+        else: print("EXISTS_VALID")
+    else:
+        # CONDITION 2: valid core registry, writable differs. Backup first,
+        # update only writable, preserve all other metadata.
+        backup_path.parent.mkdir(parents=True,exist_ok=True)
+        if not backup_path.exists(): shutil.copy2(target,backup_path)
+        existing["writable"]=writable_paths[0] if len(writable_paths)==1 else writable_paths
+        if fim_eligible: existing["monitoring"]["fim"]=True
+        atomic_write(existing); print("EXISTS_WRITABLE_UPDATED")
+else:
+    record={"integration":"docker-php","application":app,"container":container,
+        "php_version":php,"framework":framework,"source":str(source_path),
+        "writable":writable_paths[0] if len(writable_paths)==1 else writable_paths,
+        "compose":str(compose_path),
+        "monitoring":{"fim":bool(fim_eligible),"docker_health":bool(svc.get("healthcheck")),
+                      "security":False,"malware":False,"php_fpm":False}}
+    atomic_write(record)
     print("CREATED_FIM_ENABLED" if fim_eligible else "CREATED_FIM_DISABLED_PATH_INVALID")
 PY
 }
@@ -574,7 +579,7 @@ PY
         continue
     fi
     registry_result="$(write_registry "$app" "$compose_file" "$json_after" "$service" "$backup_app")" || {
-        warn "${app}: gagal membuat registry."
+        warn "${app}: registry gagal divalidasi/diperbarui; registry existing tidak ditimpa."
         FAILED_APPS+=("$app:registry")
         ((failed+=1))
         continue
@@ -587,7 +592,9 @@ PY
     elif [[ "$registry_result" == "EXISTS_FIM_ENABLED" ]]; then
         log "${app}: Registry valid; hanya monitoring.fim diaktifkan. Container tidak direcreate."
     elif [[ "$registry_result" == "EXISTS_VALID" ]]; then
-        log "${app}: Registry valid; tidak ada perubahan."
+        log "${app}: Registry valid dan writable sesuai Compose; metadata dipertahankan."
+    elif [[ "$registry_result" == "EXISTS_WRITABLE_UPDATED" ]]; then
+        log "${app}: Registry valid tetapi writable berbeda; field writable diperbarui setelah backup. Metadata lainnya dipertahankan."
     elif [[ "$registry_result" == "EXISTS_FIM_NOT_ELIGIBLE" ]]; then
         warn "${app}: FIM tidak diaktifkan karena source/writable path belum valid."
     else
