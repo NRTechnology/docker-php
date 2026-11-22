@@ -20,7 +20,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 SCRIPT_NAME="migrate-php-app.sh"
-SCRIPT_VERSION="1.3.1"
+SCRIPT_VERSION="1.3.2"
 
 DOCKER_APPS_DIR="/opt/docker-apps"
 REGISTRY_DIR="/var/lib/docker-php/monitoring/applications"
@@ -175,7 +175,12 @@ for m in mounts:
         continue
     if dst=="/var/www/html":
         source=src
-    if rw and (dst.endswith("/data") or dst.endswith("/writable") or "/storage/" in dst):
+    if rw and (
+        dst.endswith("/data")
+        or dst.endswith("/writable")
+        or "/storage/" in dst
+        or dst.endswith("/bootstrap/cache")
+    ):
         writable=src if not writable else writable+";"+src
 # Framework inference is intentionally conservative.
 framework="unknown"
