@@ -175,8 +175,11 @@ check_requirements() {
 
     success "Docker daemon berjalan."
 
-    if ! docker buildx version >/dev/null 2>&1; then
-        die "Docker Buildx tidak tersedia."
+    # Buildx bersifat opsional karena script menggunakan docker build standar.
+    if docker buildx version >/dev/null 2>&1; then
+        success "Docker Buildx tersedia (opsional)."
+    else
+        warning "Docker Buildx tidak tersedia; menggunakan docker build standar."
     fi
 
     success "Docker Buildx tersedia."
