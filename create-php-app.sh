@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="create-php-app.sh"
-SCRIPT_VERSION="1.7.2"
+SCRIPT_VERSION="1.7.3"
 
 # ==============================================================================
 # create-php-app.sh
@@ -1424,6 +1424,24 @@ ln -s "$NGINX_FILE" "$NGINX_LINK"
 # Registry ditulis paling akhir, setelah konfigurasi aplikasi berhasil dibuat,
 # divalidasi, dan virtual host diaktifkan. File sementara + rename menjaga
 # pembacaan registry tetap atomik bagi collector.
+#
+# Field "writable" harus mencerminkan host path yang benar-benar dipakai
+# sebagai writable mount:
+#   - Laravel: beberapa mount runtime berada di bawah APP_ROOT/data.
+#   - CodeIgniter / generic: mount writable tunggal adalah APP_WRITABLE.
+case "$FRAMEWORK" in
+    laravel)
+        REGISTRY_WRITABLE="${APP_ROOT}/data"
+        ;;
+    ci|generic)
+        REGISTRY_WRITABLE="$APP_WRITABLE"
+        ;;
+    *)
+        die "Framework tidak dikenal saat membangun Registry: ${FRAMEWORK}"
+        ;;
+esac
+
+log "Registry writable path: ${REGISTRY_WRITABLE}"
 log "Mendaftarkan aplikasi ke Docker-PHP monitoring registry..."
 
 install -d -o root -g root -m 0750 "$MONITORING_APPLICATIONS_DIR"
@@ -1442,7 +1460,7 @@ cat > "$REGISTRY_TMP" <<EOF
   "php_version": "${PHP_VERSION}",
   "framework": "${FRAMEWORK}",
   "source": "${APP_HTDOCS}",
-  "writable": "${APP_ROOT}/data",
+  "writable": "${REGISTRY_WRITABLE}",
   "compose": "${COMPOSE_FILE}",
   "nginx_config": "${NGINX_FILE}",
   "fpm_pool": "${FPM_CONFIG}",
